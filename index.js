@@ -64,6 +64,3 @@ app.use('/api/tournaments/:id/roles', tournamentUserRolesRouter);
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => console.log(`Server on port ${port}`));
-
-
-vvv
