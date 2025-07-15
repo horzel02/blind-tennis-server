@@ -43,6 +43,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+console.log('🔗 DATABASE_URL =', process.env.DATABASE_URL?.slice(0, 30) + '…');
+
 // test połączenia
 prisma.$connect()
   .then(() => console.log('✔️ Połączono z DB'))
@@ -64,3 +66,4 @@ const port = process.env.PORT || 5000;
 app.listen(port, () => console.log(`Server on port ${port}`));
 
 
+vvv
