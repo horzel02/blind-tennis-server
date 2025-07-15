@@ -50,7 +50,8 @@ console.log('FULL DB URL:', process.env.DATABASE_URL);
 prisma.$connect()
   .then(() => console.log('✔️ Połączono z DB'))
   .catch(e => {
-    console.error('❌ Błąd połączenia z bazą:', e);
+    console.error('❌ Błąd połączenia z bazą:', e.message)
+    console.error(e)
     process.exit(1);
   });
 
