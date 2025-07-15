@@ -11,6 +11,7 @@ import registrationRoutes from './routes/registrations.js';
 import participantsRouter from './routes/participants.js';
 import tournamentUserRolesRouter from './routes/tournamentUserRoles.js';
 import usersRouter from './routes/users.js';
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import prisma from './prismaClient.js';
 
 dotenv.config();
