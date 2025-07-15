@@ -44,6 +44,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 console.log('🔗 DATABASE_URL =', process.env.DATABASE_URL?.slice(0, 30) + '…');
+console.log('FULL DB URL:', process.env.DATABASE_URL);
 
 // test połączenia
 prisma.$connect()
