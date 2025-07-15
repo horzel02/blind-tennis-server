@@ -48,10 +48,10 @@ console.log('FULL DB URL:', process.env.DATABASE_URL);
 
 // test połączenia
 prisma.$connect()
-  .then(() => console.log('✔️ Połączono z DB'))
+  .then(() => console.log('✔️ Połączono z DB'))
   .catch(e => {
-    console.error('❌ Błąd połączenia z bazą:', e.message)
-    console.error(e)
+    console.error('❌ Błąd połączenia z bazą:', e.message);
+    console.error('––– pełen error object –––\n', e);
     process.exit(1);
   });
 
