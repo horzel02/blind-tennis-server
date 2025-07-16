@@ -2,6 +2,20 @@ import { Client } from 'pg';
 import dotenv from 'dotenv';
 dotenv.config();
 
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  console.error('UNCAUGHT EXCEPTION MESSAGE:', err.message);
+  console.error('UNCAUGHT EXCEPTION STACK:', err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+  if (reason && reason.message) console.error('UNHANDLED REJECTION MESSAGE:', reason.message);
+  if (reason && reason.stack) console.error('UNHANDLED REJECTION STACK:', reason.stack);
+  process.exit(1);
+});
+
 console.log('Rozpoczynam test połączenia z bazą danych (node-postgres)...');
 console.log('DATABASE_URL (z env):', process.env.DATABASE_URL);
 
