@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate",
-    "start": "node test-raw-connection.js",
+    "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
