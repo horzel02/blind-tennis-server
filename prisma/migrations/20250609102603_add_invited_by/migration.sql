@@ -1,5 +1,7 @@
--- AlterTable
-ALTER TABLE `tournamentregistration` ADD COLUMN `invitedBy` INTEGER NULL;
+-- AlterTable: dodajemy nullable invitedBy
+ALTER TABLE `TournamentRegistration`
+ADD COLUMN `invitedBy` INT NULL DEFAULT NULL;
 
--- CreateIndex
-CREATE INDEX `TournamentRegistration_invitedBy_idx` ON `TournamentRegistration`(`invitedBy`);
+-- CreateIndex: na tej samej tabeli
+CREATE INDEX `TournamentRegistration_invitedBy_idx`
+  ON `TournamentRegistration` (`invitedBy`);
