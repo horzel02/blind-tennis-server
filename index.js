@@ -46,14 +46,11 @@ console.log('FULL DB URL:', process.env.DATABASE_URL);
 // Test połączenia z bazą danych
 prisma.$connect()
   .then(() => console.log('✔️ Połączono z DB'))
-   .catch(e => {
-  console.error('❌ Pełny błąd połączenia z bazą:');
-  try {
-    console.error('Szczegóły błędu (JSON):', JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
-  } catch (jsonError) {
-    console.error('Szczegóły błędu (String):', String(e));
-  }
-  if (e.message) console.error('Message:', e.message);
+ .catch(e => {
+  console.error('❌ Błąd połączenia z bazą danych. Szczegóły:');
+  console.error('Pełna struktura błędu:', e);
+  if (e.message) console.error('Wiadomość błędu:', e.message);
+  if (e.stack) console.error('Stack trace:', e.stack);
   process.exit(1);
 });
 
