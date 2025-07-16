@@ -82,7 +82,7 @@ model TournamentRegistration {
   status         String    @default("pending") @db.VarChar(10) // "pending" | "accepted" | "rejected" | "invited"
   createdAt      DateTime  @default(now()) @db.Timestamp(0)
   updatedAt    DateTime  @default(now()) @updatedAt
-  invitedBy     Int?      @db.Int 
+  invitedBy     Int?
 
   tournament     tournament @relation(fields: [tournamentId], references: [id])
   user           users      @relation(fields: [userId], references: [id])
