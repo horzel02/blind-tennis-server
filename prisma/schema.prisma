@@ -8,40 +8,40 @@ datasource db {
 }
 
 model roles {
-  id                Int          @id @default(autoincrement())
-  role_name         String       @unique(map: "role_name") @db.VarChar(50)
-  creation_date     DateTime     @default(now()) @db.Timestamp(0)
-  modification_date DateTime     @default(now()) @db.Timestamp(0)
-  active            Boolean      @default(true)
+  id                Int            @id @default(autoincrement())
+  role_name         String         @unique(map: "role_name") @db.VarChar(50)
+  creation_date     DateTime       @default(now()) @db.Timestamp(0)
+  modification_date DateTime       @default(now()) @db.Timestamp(0)
+  active            Boolean        @default(true)
   user_roles        user_roles[]
 }
 
 model tournament {
-  id                      Int                       @id @default(autoincrement())
-  name                    String                    @db.VarChar(255)
-  description             String?                   @db.Text
-  category                String                    @db.VarChar(10)
-  gender                  String                    @db.VarChar(10)
-  street                  String                    @db.VarChar(255)
-  postalCode              String                    @db.VarChar(10)
-  city                    String                    @db.VarChar(100)
-  country                 String                    @db.VarChar(100)
-  start_date              DateTime                  @db.Date
-  end_date                DateTime                  @db.Date
+  id                      Int                    @id @default(autoincrement())
+  name                    String                 @db.VarChar(255)
+  description             String?                @db.Text
+  category                String                 @db.VarChar(10)
+  gender                  String                 @db.VarChar(10)
+  street                  String                 @db.VarChar(255)
+  postalCode              String                 @db.VarChar(10)
+  city                    String                 @db.VarChar(100)
+  country                 String                 @db.VarChar(100)
+  start_date              DateTime               @db.Date
+  end_date                DateTime               @db.Date
   registration_deadline   DateTime?
   participant_limit       Int?
-  applicationsOpen        Boolean                   @default(true)
-  type                    String                    @default("open") @db.VarChar(10) // "open" | "invite"
+  applicationsOpen        Boolean                @default(true)
+  type                    String                 @default("open") @db.VarChar(10) // "open" | "invite"
   organizer_id            Int
-  organizer               users                     @relation(fields: [organizer_id], references: [id])
-  created_at              DateTime                  @default(now()) @db.Timestamp(0)
-  updated_at              DateTime                  @default(now()) @db.Timestamp(0)
+  organizer               users                  @relation(fields: [organizer_id], references: [id])
+  created_at              DateTime               @default(now()) @db.Timestamp(0)
+  updated_at              DateTime               @default(now()) @db.Timestamp(0)
 
-  // relacja do zgłoszeń (TournamentRegistration)
-  tournamentRegistrations TournamentRegistration[]
+  // relacja do zgłoszeń (tournamentregistration) - Zmieniona nazwa
+  tournamentRegistrations tournamentregistration[]
 
-  // relacja do per-turniejowych ról
-  tournamentUserRoles     TournamentUserRole[]
+  // relacja do per-turniejowych ról - Zmieniona nazwa
+  tournamentUserRoles     tournamentuserrole[]
 }
 
 model user_roles {
@@ -57,47 +57,47 @@ model user_roles {
 }
 
 model users {
-  id                      Int                       @id @default(autoincrement())
-  name                    String                    @db.VarChar(100)
-  surname                 String                    @db.VarChar(100)
-  email                   String                    @unique(map: "email") @db.VarChar(100)
-  password_hash           String                    @db.VarChar(255)
-  creation_date           DateTime                  @default(now()) @db.Timestamp(0)
-  modification_date       DateTime                  @default(now()) @db.Timestamp(0)
-  active                  Boolean                   @default(true)
+  id                      Int                      @id @default(autoincrement())
+  name                    String                   @db.VarChar(100)
+  surname                 String                   @db.VarChar(100)
+  email                   String                   @unique(map: "email") @db.VarChar(100)
+  password_hash           String                   @db.VarChar(255)
+  creation_date           DateTime                 @default(now()) @db.Timestamp(0)
+  modification_date       DateTime                 @default(now()) @db.Timestamp(0)
+  active                  Boolean                  @default(true)
   user_roles              user_roles[]
   tournaments             tournament[]
-  
-  // relacja do zgłoszeń (TournamentRegistration)
-  tournamentRegistrations TournamentRegistration[]
 
-  // relacja do per-turniejowych ról
-  tournamentUserRoles     TournamentUserRole[]
+  // relacja do zgłoszeń (tournamentregistration) - Zmieniona nazwa
+  tournamentRegistrations tournamentregistration[]
+
+  // relacja do per-turniejowych ról - Zmieniona nazwa
+  tournamentUserRoles     tournamentuserrole[]
 }
 
-model TournamentRegistration {
-  id             Int       @id @default(autoincrement())
-  tournamentId   Int
-  userId         Int
-  status         String    @default("pending") @db.VarChar(10) // "pending" | "accepted" | "rejected" | "invited"
-  createdAt      DateTime  @default(now()) @db.Timestamp(0)
-  updatedAt    DateTime  @default(now()) @updatedAt
+model tournamentregistration { // Zmieniona nazwa modelu na małe litery
+  id            Int      @id @default(autoincrement())
+  tournamentId  Int
+  userId        Int
+  status        String   @default("pending") @db.VarChar(10) // "pending" | "accepted" | "rejected" | "invited"
+  createdAt     DateTime @default(now()) @db.Timestamp(0)
+  updatedAt     DateTime @default(now()) @updatedAt
   invitedBy     Int?
 
-  tournament     tournament @relation(fields: [tournamentId], references: [id])
-  user           users      @relation(fields: [userId], references: [id])
+  tournament    tournament @relation(fields: [tournamentId], references: [id])
+  user          users      @relation(fields: [userId], references: [id])
 
-  @@index([tournamentId], map: "TournamentRegistration_tournamentId_index")
-  @@index([userId], map: "TournamentRegistration_userId_index")
+  @@index([tournamentId], map: "TournamentRegistration_tournamentId_index") // Mapy indeksów pozostają z oryginalnymi nazwami, to ok
+  @@index([userId], map: "TournamentRegistration_userId_index")           // ponieważ odwołują się do wewnętrznych nazw, nie publicznych tabel
   @@index([invitedBy])
 }
 
-model TournamentUserRole {
-  id            Int       @id @default(autoincrement())
+model tournamentuserrole { // Zmieniona nazwa modelu na małe litery
+  id            Int      @id @default(autoincrement())
   tournamentId  Int
   userId        Int
-  role          String    @db.VarChar(20) // "organizer" | "participant" | "referee"
-  createdAt     DateTime  @default(now())
+  role          String   @db.VarChar(20) // "organizer" | "participant" | "referee"
+  createdAt     DateTime @default(now())
 
   tournament    tournament @relation(fields: [tournamentId], references: [id])
   user          users      @relation(fields: [userId], references: [id])
