@@ -15,8 +15,6 @@ import participantsRouter from './routes/participants.js';
 import tournamentUserRolesRouter from './routes/tournamentUserRoles.js';
 import usersRouter from './routes/users.js';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 import prisma from './prismaClient.js';
 
 const app = express();
@@ -24,9 +22,21 @@ const app = express();
 console.log('🛠️ cwd:', process.cwd());
 console.log('🛠️ DATABASE_URL:', process.env.DATABASE_URL);
 
-// CORS
+// Konfiguracja CORS 
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173'
+].filter(Boolean);
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}.`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
 
@@ -48,14 +58,13 @@ console.log('FULL DB URL:', process.env.DATABASE_URL);
 prisma.$connect()
   .then(() => console.log('✔️ Połączono z DB'))
   .catch(e => {
-    console.error('❌ BŁĄD Z PRISMĄ W INDEX.JS:'); // Zmieniony komunikat
+    console.error('❌ BŁĄD Z PRISMĄ W INDEX.JS:');
     console.error('Błąd PrismaClientInitializationError:', e.name);
     console.error('Kod błędu (Prisma):', e.errorCode);
     console.error('Wiadomość błędu:', e.message);
     console.error('Stack trace:', e.stack);
     console.error('Pełny obiekt błędu (console.dir):');
     console.dir(e, { depth: null });
-    // process.exit(1); // Zakomentowane
   });
 
 // Ścieżki API
