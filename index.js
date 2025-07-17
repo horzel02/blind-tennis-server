@@ -1,25 +1,4 @@
 // index.js
-
-// Globalne handlery błędów - muszą być na samym początku, aby przechwycić jak najwięcej błędów
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION: Aplikacja zakończyła działanie z nieprzechwyconym wyjątkiem!');
-  console.error('Błąd:', err);
-  console.error('Wiadomość błędu:', err.message);
-  console.error('Stack trace:', err.stack);
-  process.exit(1); // Ważne: Wyjście z procesem po nieprzechwyconym błędzie
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('UNHANDLED REJECTION: Aplikacja zakończyła działanie z nieobsłużonym odrzuceniem obietnicy!');
-  console.error('Przyczyna:', reason);
-  if (reason && reason.message) console.error('Wiadomość przyczyny:', reason.message);
-  if (reason && reason.stack) console.error('Stack trace przyczyny:', reason.stack);
-  console.error('Obietnica:', promise);
-  process.exit(1); // Ważne: Wyjście z procesem po nieobsłużonym odrzuceniu
-});
-
-// --- Poniżej rozpoczyna się reszta Twojego kodu ---
-
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -36,8 +15,6 @@ import participantsRouter from './routes/participants.js';
 import tournamentUserRolesRouter from './routes/tournamentUserRoles.js';
 import usersRouter from './routes/users.js';
 
-// Tymczasowe wyłączenie weryfikacji certyfikatów TLS dla Node.js
-// Pamiętaj: NIEBEZPIECZNE w środowisku produkcyjnym bez odpowiedniego zabezpieczenia!
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 import prisma from './prismaClient.js';
@@ -71,11 +48,14 @@ console.log('FULL DB URL:', process.env.DATABASE_URL);
 prisma.$connect()
   .then(() => console.log('✔️ Połączono z DB'))
   .catch(e => {
-    console.error('❌ Błąd połączenia z bazą danych. Szczegóły:');
-    console.error('Pełna struktura błędu (z catch):', e);
-    if (e.message) console.error('Wiadomość błędu (z catch):', e.message);
-    if (e.stack) console.error('Stack trace (z catch):', e.stack);
-    process.exit(1); // Zakończ proces w przypadku błędu połączenia
+    console.error('❌ BŁĄD Z PRISMĄ W INDEX.JS:'); // Zmieniony komunikat
+    console.error('Błąd PrismaClientInitializationError:', e.name);
+    console.error('Kod błędu (Prisma):', e.errorCode);
+    console.error('Wiadomość błędu:', e.message);
+    console.error('Stack trace:', e.stack);
+    console.error('Pełny obiekt błędu (console.dir):');
+    console.dir(e, { depth: null });
+    // process.exit(1); // Zakomentowane
   });
 
 // Ścieżki API

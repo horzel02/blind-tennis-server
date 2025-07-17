@@ -18,8 +18,8 @@ pool.getConnection()
     conn.release();
   })
   .catch(err => {
-    console.error('❌ Błąd połączenia z bazą:', err.message);
-    process.exit(1);
+    console.error('❌ AAAAAABłąd połączenia z bazą:', err.message);
+    //process.exit(1);
   });
 
 export default pool;

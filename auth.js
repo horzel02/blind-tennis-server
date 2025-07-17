@@ -2,59 +2,101 @@
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import bcrypt from 'bcrypt';
-import db from './db.js';
+import prisma from './prismaClient.js';
 
 // LocalStrategy po email i password
 passport.use(new LocalStrategy({ usernameField: 'email' },
   async (email, password, done) => {
     try {
-      const [[user]] = await db.query(
-        'SELECT * FROM users WHERE email = ? AND active = 1',
-        [email]
-      );
+      // Znajdź użytkownika za pomocą Prismy
+      const user = await prisma.users.findFirst({
+        where: {
+          email: email,
+          active: true
+        }
+      });
+
       if (!user) {
-        return done(null, false, { message: 'Nieprawidłowy email' });
+        return done(null, false, { message: 'Nieprawidłowy email lub użytkownik nieaktywny.' });
       }
+
+      // Porównaj hasło
       const match = await bcrypt.compare(password, user.password_hash);
       if (!match) {
-        return done(null, false, { message: 'Nieprawidłowe hasło' });
+        return done(null, false, { message: 'Nieprawidłowe hasło.' });
       }
-      // pobierz role
-      const [roles] = await db.query(
-        `SELECT r.role_name
-         FROM roles r
-         JOIN user_roles ur ON r.id = ur.role_id
-         WHERE ur.user_id = ? AND r.active = 1`,
-        [user.id]
-      );
-      user.roles = roles.map(r => r.role_name);
+
+      const userRoles = await prisma.user_roles.findMany({
+        where: {
+          user_id: user.id,
+          roles: {
+            active: true
+          }
+        },
+        select: {
+          roles: {
+            select: {
+              role_name: true
+            }
+          }
+        }
+      });
+
+      user.roles = userRoles.map(ur => ur.roles.role_name);
       return done(null, user);
     } catch (err) {
+      console.error("Błąd w LocalStrategy:", err);
       return done(err);
     }
 }));
 
+// Serializacja użytkownika (zapisywanie ID użytkownika w sesji)
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
+// Deserializacja użytkownika (odzyskiwanie obiektu użytkownika z ID z sesji)
 passport.deserializeUser(async (id, done) => {
   try {
-    const [[user]] = await db.query(
-      'SELECT id, name, surname, email FROM users WHERE id = ? AND active = 1',
-      [id]
-    );
-    if (!user) return done(null, false);
-    const [roles] = await db.query(
-      `SELECT r.role_name
-       FROM roles r
-       JOIN user_roles ur ON r.id = ur.role_id
-       WHERE ur.user_id = ? AND r.active = 1`,
-      [user.id]
-    );
-    user.roles = roles.map(r => r.role_name);
+    const user = await prisma.users.findUnique({
+      where: {
+        id: id,
+        active: true
+      },
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true
+      }
+    });
+
+    if (!user) {
+      return done(null, false);
+    }
+
+    // Pobierz role użytkownika (ponownie)
+    const userRoles = await prisma.user_roles.findMany({
+      where: {
+        user_id: user.id,
+        roles: {
+          active: true
+        }
+      },
+      select: {
+        roles: {
+          select: {
+            role_name: true
+          }
+        }
+      }
+    });
+
+    user.roles = userRoles.map(ur => ur.roles.role_name);
+
     done(null, user);
   } catch (err) {
+    console.error("Błąd w deserializeUser:", err);
     done(err);
   }
 });

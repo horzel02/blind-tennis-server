@@ -1,3 +1,4 @@
+// server/routes/participants.js
 import express from 'express';
 import { ensureAuth, isOrganizer } from '../middlewares/auth.js';
 import { addParticipant } from '../controllers/inviteController.js';
