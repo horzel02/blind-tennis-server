@@ -69,6 +69,13 @@ app.use(session({
   },
 }));
 
+app.use((req, res, next) => {
+  console.log('DEBUG: Stan req.session PRZED Passport.js:');
+  console.log('DEBUG:   req.sessionID:', req.sessionID);
+  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2)); // Użyj JSON.stringify dla czytelności
+  next();
+});
+
 app.use(passport.initialize());
 app.use(passport.session());
 
