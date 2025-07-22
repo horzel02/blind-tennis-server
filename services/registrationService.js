@@ -1,5 +1,6 @@
 // server/services/registrationService.js
-import prisma from '../prismaClient.js';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 export async function createRegistration(tournamentId, userId) {
   return prisma.tournamentRegistration.create({
@@ -91,14 +92,25 @@ export async function deleteRegistration(registrationId) {
   });
 }
 
-export async function countAcceptedRegistrations(tournamentId) {
-  return prisma.tournamentRegistration.count({
-    where: {
-      tournamentId,
-      status: 'accepted',
-    },
-  });
-}
+export const countAcceptedRegistrations = async (tournamentId) => {
+    console.log('DEBUG: W countAcceptedRegistrations');
+    console.log('DEBUG: prisma object:', prisma); // Zobacz, czy prisma jest zainicjowane
+    console.log('DEBUG: prisma.tournamentregistration object:', prisma.tournamentregistration); // Zobacz, czy model istnieje
+
+    try {
+        const count = await prisma.tournamentregistration.count({
+            where: {
+                tournamentId: parseInt(tournamentId),
+                status: 'accepted'
+            }
+        });
+        console.log('DEBUG: Count:', count);
+        return count;
+    } catch (error) {
+        console.error('💥 [countAcceptedRegistrations] wyjątek:', error);
+        throw error;
+    }
+};
 
 export async function findAllByUser(userId) {
   return prisma.tournamentRegistration.findMany({

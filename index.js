@@ -42,14 +42,15 @@ app.use(cors({
 
 app.use(express.json());
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'testowehaslo',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'none',
-    secure: true
-  }
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 24 * 60 * 60 * 1000,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true
+    },
 }));
 app.use(passport.initialize());
 app.use(passport.session());
