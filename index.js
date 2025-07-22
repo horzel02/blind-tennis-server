@@ -50,14 +50,6 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: process.env.NODE_ENV === 'production' ? false : true
-  },
-  types: {
-    getTypeParser: (oid, format) => {
-      if (oid === 114 || oid === 3802) {
-        return JSON.parse;
-      }
-      return pg.types.getTypeParser(oid, format);
-    }
   }
 });
 
@@ -80,12 +72,22 @@ app.use(session({
 app.use((req, res, next) => {
   console.log('DEBUG: Stan req.session PRZED Passport.js:');
   console.log('DEBUG:   req.sessionID:', req.sessionID);
-  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2)); // Użyj JSON.stringify dla czytelności
+  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2));
+  console.log('DEBUG:   req.session.passport istnieje (PRZED Passport.js):', !!req.session.passport);
   next();
 });
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+app.use((req, res, next) => {
+  console.log('DEBUG: Stan req.session PO Passport.js:');
+  console.log('DEBUG:   req.sessionID:', req.sessionID);
+  console.log('DEBUG:   req.session (cały obiekt - PO Passport.js):', JSON.stringify(req.session, null, 2));
+  console.log('DEBUG:   req.user (PO Passport.js):', JSON.stringify(req.user, null, 2));
+  console.log('DEBUG:   req.isAuthenticated() (PO Passport.js):', req.isAuthenticated());
+  next();
+});
 
 // Wyświetl URL z .env (wersja skrócona i pełna dla logów)
 console.log('🔗 DATABASE_URL =', process.env.DATABASE_URL?.slice(0, 30) + '…');
