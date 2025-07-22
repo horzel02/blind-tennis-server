@@ -7,6 +7,8 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import './auth.js';
+import pg from 'pg';
+import createPgSession from 'connect-pg-simple';
 
 import authRoutes from './routes/auth.js';
 import tournamentRoutes from './routes/tournaments.js';
@@ -41,17 +43,32 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// --- KONFIGURACJA connect-pg-simple ---
+const PgSession = createPgSession(session);
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: process.env.NODE_ENV === 'production' ? false : true
+  }
+});
+
 app.use(session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        maxAge: 24 * 60 * 60 * 1000,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true
-    },
+  store: new PgSession({
+    pool: pgPool,
+    tableName: 'session'
+  }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true
+  },
 }));
+
 app.use(passport.initialize());
 app.use(passport.session());
 
