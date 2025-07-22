@@ -85,8 +85,6 @@ prisma.$connect()
     console.error('Kod błędu (Prisma):', e.errorCode);
     console.error('Wiadomość błędu:', e.message);
     console.error('Stack trace:', e.stack);
-    console.error('Pełny obiekt błędu (console.dir):');
-    console.dir(e, { depth: null });
   });
 
 // Ścieżki API
