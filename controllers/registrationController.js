@@ -3,6 +3,7 @@ import prisma from '../prismaClient.js';
 import * as registrationService from '../services/registrationService.js';
 import * as tournamentService from '../services/tournamentService.js';
 import * as tournamentUserRoleService from '../services/tournamentUserRoleService.js';
+console.log('DEBUG: registrationService object:', registrationService);
 
 // POST /api/tournaments/:id/registrations
 export async function createRegistration(req, res) {
