@@ -1,6 +1,5 @@
 // server/services/registrationService.js
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import prisma from '../prismaClient.js';
 
 export async function createRegistration(tournamentId, userId) {
   return prisma.tournamentRegistration.create({
