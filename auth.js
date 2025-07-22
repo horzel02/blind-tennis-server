@@ -48,15 +48,20 @@ passport.use(new LocalStrategy({ usernameField: 'email' },
       console.error("Błąd w LocalStrategy:", err);
       return done(err);
     }
-}));
+  }));
 
 // Serializacja użytkownika (zapisywanie ID użytkownika w sesji)
 passport.serializeUser((user, done) => {
+  console.log('DEBUG: ENTERING serializeUser');
+  console.log('DEBUG: User ID passed to serializeUser:', user.id); // Sprawdzamy, jakie ID użytkownika jest przekazywane
   done(null, user.id);
+  console.log('DEBUG: EXITING serializeUser');
 });
 
 // Deserializacja użytkownika (odzyskiwanie obiektu użytkownika z ID z sesji)
 passport.deserializeUser(async (id, done) => {
+  console.log('DEBUG: ENTERING deserializeUser');
+  console.log('DEBUG: ID passed to deserializeUser:', id); // Sprawdzamy, jakie ID jest odczytywane z sesji
   try {
     const user = await prisma.users.findUnique({
       where: {
@@ -72,6 +77,7 @@ passport.deserializeUser(async (id, done) => {
     });
 
     if (!user) {
+      console.log('DEBUG: User not found in deserializeUser for ID:', id);
       return done(null, false);
     }
 
@@ -93,10 +99,11 @@ passport.deserializeUser(async (id, done) => {
     });
 
     user.roles = userRoles.map(ur => ur.roles.role_name);
-
+    console.log('DEBUG: User found and deserialized:', user.id, user.email);
     done(null, user);
   } catch (err) {
     console.error("Błąd w deserializeUser:", err);
     done(err);
   }
+  console.log('DEBUG: EXITING deserializeUser');
 });
