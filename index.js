@@ -50,6 +50,14 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: process.env.NODE_ENV === 'production' ? false : true
+  },
+  types: {
+    getTypeParser: (oid, format) => {
+      if (oid === 114 || oid === 3802) {
+        return JSON.parse;
+      }
+      return pg.types.getTypeParser(oid, format);
+    }
   }
 });
 
