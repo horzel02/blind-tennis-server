@@ -59,7 +59,7 @@ app.use(session({
     tableName: 'session'
   }),
   secret: process.env.SESSION_SECRET,
-  resave: false,
+  resave: true,
   saveUninitialized: false,
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
