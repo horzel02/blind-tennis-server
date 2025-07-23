@@ -113,7 +113,7 @@ export const countAcceptedRegistrations = async (tournamentId) => {
 };
 
 export async function findAllByUser(userId) {
-  return prisma.tournamentRegistration.findMany({
+  return prisma.tournamentregistration.findMany({
     where: { userId },
     include: {
       tournament: true

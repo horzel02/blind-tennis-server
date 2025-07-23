@@ -10,7 +10,7 @@ export async function addParticipant(tournamentId, userId, organizerId) {
   }
 
   // 2. Sprawdź limit miejsc i czy user już jest dodany
-  const exists = await prisma.tournamentRegistration.findFirst({
+  const exists = await prisma.tournamentregistration.findFirst({
     where: { tournamentId, userId }
   });
   if (exists) {
@@ -26,7 +26,7 @@ export async function addParticipant(tournamentId, userId, organizerId) {
   }
 
   // 3. Tworzymy rekord ze statusem invited, nie od razu accepted
-  return prisma.tournamentRegistration.create({
+  return prisma.tournamentregistration.create({
     data: {
       tournamentId,
       userId,
