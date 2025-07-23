@@ -8,7 +8,7 @@ import session from 'express-session';
 import passport from 'passport';
 import './auth.js';
 import pg from 'pg';
-import createPgSession from 'connect-pg-simple';
+import PgSession from 'pg-session-store';
 
 import authRoutes from './routes/auth.js';
 import tournamentRoutes from './routes/tournaments.js';
@@ -24,7 +24,7 @@ const app = express();
 console.log('🛠️ cwd:', process.cwd());
 console.log('🛠️ DATABASE_URL:', process.env.DATABASE_URL);
 
-// Konfiguracja CORS 
+// Konfiguracja CORS
 const allowedOrigins = [
   process.env.CLIENT_URL,
   'http://localhost:5173'
@@ -34,7 +34,7 @@ app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}.`;
+      const msg = `The CORS policy for this site has been blocked by the server: ${origin}.`;
       return callback(new Error(msg), false);
     }
     return callback(null, true);
@@ -44,8 +44,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// --- KONFIGURACJA connect-pg-simple ---
-const PgSession = createPgSession(session);
+// KONFIGURACJA sesji z pg-session-store
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -53,13 +52,15 @@ const pgPool = new pg.Pool({
   }
 });
 
+const sessionStore = new PgSession({
+  pool: pgPool,
+  tableName: 'session'
+});
+
 app.use(session({
-  store: new PgSession({
-    pool: pgPool,
-    tableName: 'session'
-  }),
+  store: sessionStore,
   secret: process.env.SESSION_SECRET,
-  resave: true,
+  resave: false,
   saveUninitialized: false,
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
@@ -71,9 +72,9 @@ app.use(session({
 
 app.use((req, res, next) => {
   console.log('DEBUG: Stan req.session PRZED Passport.js:');
-  console.log('DEBUG:   req.sessionID:', req.sessionID);
-  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2));
-  console.log('DEBUG:   req.session.passport istnieje (PRZED Passport.js):', !!req.session.passport);
+  console.log('DEBUG:   req.sessionID:', req.sessionID);
+  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2));
+  console.log('DEBUG:   req.session.passport istnieje (PRZED Passport.js):', !!req.session.passport);
   next();
 });
 
@@ -82,10 +83,10 @@ app.use(passport.session());
 
 app.use((req, res, next) => {
   console.log('DEBUG: Stan req.session PO Passport.js:');
-  console.log('DEBUG:   req.sessionID:', req.sessionID);
-  console.log('DEBUG:   req.session (cały obiekt - PO Passport.js):', JSON.stringify(req.session, null, 2));
-  console.log('DEBUG:   req.user (PO Passport.js):', JSON.stringify(req.user, null, 2));
-  console.log('DEBUG:   req.isAuthenticated() (PO Passport.js):', req.isAuthenticated());
+  console.log('DEBUG:   req.sessionID:', req.sessionID);
+  console.log('DEBUG:   req.session (cały obiekt - PO Passport.js):', JSON.stringify(req.session, null, 2));
+  console.log('DEBUG:   req.user (PO Passport.js):', JSON.stringify(req.user, null, 2));
+  console.log('DEBUG:   req.isAuthenticated() (PO Passport.js):', req.isAuthenticated());
   next();
 });
 
