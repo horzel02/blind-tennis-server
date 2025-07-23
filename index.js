@@ -8,7 +8,7 @@ import session from 'express-session';
 import passport from 'passport';
 import './auth.js';
 import pg from 'pg';
-import PgSession from 'pg-session-store';
+import connectPgSession from 'pg-session-store';
 
 import authRoutes from './routes/auth.js';
 import tournamentRoutes from './routes/tournaments.js';
@@ -44,6 +44,8 @@ app.use(cors({
 
 app.use(express.json());
 
+const PgSessionStore = connectPgSession(session);
+
 // KONFIGURACJA sesji z pg-session-store
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -52,7 +54,7 @@ const pgPool = new pg.Pool({
   }
 });
 
-const sessionStore = new PgSession({
+const sessionStore = new PgSessionStore({
   pool: pgPool,
   tableName: 'session'
 });
@@ -68,7 +70,7 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true
   },
-}));
+}))
 
 app.use((req, res, next) => {
   console.log('DEBUG: Stan req.session PRZED Passport.js:');
