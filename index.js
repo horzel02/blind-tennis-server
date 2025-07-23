@@ -60,17 +60,21 @@ const sessionStore = new PgSessionStore({
 });
 
 app.use(session({
-  store: sessionStore,
+  store: new PgSessionStore({
+    conString: DATABASE_URL,
+    pruneSessionInterval: 60 * 60
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 24 * 60 * 60 * 1000,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     secure: process.env.NODE_ENV === 'production',
-    httpOnly: true
-  },
-}))
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'none',
+    domain: 'blind-tennis-server.onrender.com'
+  }
+}));
 
 app.use((req, res, next) => {
   console.log('DEBUG: Stan req.session PRZED Passport.js:');
