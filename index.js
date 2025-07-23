@@ -7,6 +7,7 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import './auth.js';
+import pg from 'pg';
 import connectPgSession from 'pg-session-store';
 
 import authRoutes from './routes/auth.js';
@@ -46,9 +47,16 @@ app.use(express.json());
 const PgSessionStore = connectPgSession(session);
 
 // KONFIGURACJA sesji z pg-session-store
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: process.env.NODE_ENV === 'production' ? false : true
+  }
+});
+
 const sessionStore = new PgSessionStore({
-  pool: pgPool,
-  tableName: 'session'
+  pool: pgPool, // <-- Tutaj pgPool jest już zdefiniowane
+  tableName: 'session'
 });
 
 app.use(session({
