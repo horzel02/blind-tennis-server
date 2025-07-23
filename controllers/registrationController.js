@@ -47,7 +47,7 @@ export async function inviteUser(req, res) {
     // 2) Uprawnienia: oryginalny creator LUB invited organizer
     const isCreator = tour.organizer_id === callerId;
     const isInvitedOrg = Boolean(
-      await prisma.tournamentUserRole.findFirst({
+      await prisma.tournamentuserrole.findFirst({
         where: { tournamentId, userId: callerId, role: 'organizer' }
       })
     );
@@ -91,7 +91,7 @@ export async function getAllRegistrationsForOrganizer(req, res) {
     // 2) Sprawdź czy to twórca turnieju
     if (tourn.organizer_id !== userId) {
       // 3) Jeśli nie – sprawdź czy w tabeli tournamentUserRole ma rolę 'organizer'
-      const row = await prisma.tournamentUserRole.findFirst({
+      const row = await prisma.tournamentuserrole.findFirst({
         where: { tournamentId, userId, role: 'organizer' }
       });
       if (!row) {
@@ -164,7 +164,7 @@ export async function updateRegistrationStatus(req, res) {
     // 2) Dowiedz się, czy to twórca turnieju…
     const isCreator = tourn.organizer_id === userId;
     // …czy zaproszony organizator
-    const row = await prisma.tournamentUserRole.findFirst({
+    const row = await prisma.tournamentuserrole.findFirst({
       where: { tournamentId: tourn.id, userId, role: 'organizer' }
     });
     const isInvitedOrg = Boolean(row);

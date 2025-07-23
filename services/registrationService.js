@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function createRegistration(tournamentId, userId) {
-  return prisma.tournamentRegistration.create({
+  return prisma.tournamentregistration.create({
     data: {
       tournamentId,
       userId,
@@ -13,7 +13,7 @@ export async function createRegistration(tournamentId, userId) {
 }
 
 export async function findByTournamentAndUser(tournamentId, userId) {
-  return prisma.tournamentRegistration.findFirst({
+  return prisma.tournamentregistration.findFirst({
     where: {
       tournamentId,
       userId,
@@ -22,13 +22,13 @@ export async function findByTournamentAndUser(tournamentId, userId) {
 }
 
 export async function findById(registrationId) {
-  return prisma.tournamentRegistration.findUnique({
+  return prisma.tournamentregistration.findUnique({
     where: { id: registrationId },
   });
 }
 
 export async function findByIdWithUser(registrationId) {
-  return prisma.tournamentRegistration.findUnique({
+  return prisma.tournamentregistration.findUnique({
     where: { id: registrationId },
     include: {
       user: {
@@ -44,7 +44,7 @@ export async function findByIdWithUser(registrationId) {
 }
 
 export async function findByUser(userId) {
-  return prisma.tournamentRegistration.findMany({
+  return prisma.tournamentregistration.findMany({
     where: { userId },
     include: {
       tournament: {
@@ -61,7 +61,7 @@ export async function findByUser(userId) {
 }
 
 export async function getRegistrationsByTournament(tournamentId) {
-  return prisma.tournamentRegistration.findMany({
+  return prisma.tournamentregistration.findMany({
     where: { tournamentId },
     include: {
       user: {
@@ -80,14 +80,14 @@ export async function getRegistrationsByTournament(tournamentId) {
 }
 
 export async function updateRegistrationStatus(registrationId, status) {
-  return prisma.tournamentRegistration.update({
+  return prisma.tournamentregistration.update({
     where: { id: registrationId },
     data: { status },
   });
 }
 
 export async function deleteRegistration(registrationId) {
-  return prisma.tournamentRegistration.delete({
+  return prisma.tournamentregistration.delete({
     where: { id: registrationId },
   });
 }

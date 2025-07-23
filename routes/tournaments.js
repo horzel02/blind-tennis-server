@@ -16,7 +16,7 @@ async function ensureTournyOrg(req, res, next) {
   const tour = await tournamentService.findTournamentById(tournamentId)
   if (!tour) return res.status(404).json({ error: 'Turniej nie istnieje' })
   if (tour.organizer_id === userId) return next()
-  const hasRole = await prisma.tournamentUserRole.findFirst({
+  const hasRole = await prisma.tournamentuserrole.findFirst({
     where: { tournamentId, userId, role: 'organizer' }
   })
   if (hasRole) return next()

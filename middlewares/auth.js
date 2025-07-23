@@ -26,7 +26,7 @@ export function hasTournamentRole(requiredRole) {
         const tournamentId = parseInt(req.params.id, 10);
         if (!userId) return res.status(401).json({ error: 'Brak autoryzacji' });
 
-        const exists = await prisma.tournamentUserRole.findFirst({
+        const exists = await prisma.tournamentuserrole.findFirst({
             where: { userId, tournamentId, role: requiredRole }
         });
         if (!exists) {
