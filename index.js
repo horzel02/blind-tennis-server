@@ -20,6 +20,7 @@ import usersRouter from './routes/users.js';
 import prisma from './prismaClient.js';
 
 const app = express();
+app.set('trust proxy', 1);
 
 console.log('🛠️ cwd:', process.cwd());
 console.log('🛠️ DATABASE_URL:', process.env.DATABASE_URL);
@@ -68,8 +69,7 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: 'none',
-    domain: 'blind-tennis-server.onrender.com'
+    sameSite: 'none'
   }
 }));
 
