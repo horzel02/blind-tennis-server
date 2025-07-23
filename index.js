@@ -61,7 +61,7 @@ const sessionStore = new PgSessionStore({
 
 app.use(session({
   store: new PgSessionStore({
-    conString: DATABASE_URL,
+    conString: process.env.DATABASE_URL,
     pruneSessionInterval: 60 * 60
   }),
   secret: process.env.SESSION_SECRET,
