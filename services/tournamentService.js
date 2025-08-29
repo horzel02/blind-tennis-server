@@ -12,8 +12,6 @@ function parseDate(dateStr) {
 export function createTournament({
   name,
   description,
-  category,
-  gender,
   street,
   postalCode,
   city,
@@ -23,14 +21,22 @@ export function createTournament({
   registration_deadline,
   participant_limit,
   applicationsOpen,
-  organizer_id
+  isGroupPhase,
+  setsToWin,
+  gamesPerSet,
+  tieBreakType,
+  organizer_id,
+  categories,
 }) {
+  const categoriesToCreate = categories.map(cat => ({
+    categoryName: cat.category,
+    gender: cat.gender,
+  }));
+
   return prisma.tournament.create({
     data: {
       name,
       description,
-      category,
-      gender,
       street,
       postalCode,
       city,
@@ -44,7 +50,23 @@ export function createTournament({
         ? Number(participant_limit)
         : null,
       applicationsOpen,
-      organizer_id
+      organizer_id,
+      isGroupPhase,
+      setsToWin,
+      gamesPerSet,
+      tieBreakType,
+      categories: {
+        create: categoriesToCreate,
+      },
+      tournamentUserRoles: {
+        create: {
+          userId: organizer_id,
+          role: 'organizer'
+        }
+      }
+    },
+    include: {
+      categories: true,
     }
   });
 }
@@ -54,8 +76,6 @@ export function updateTournament(
   {
     name,
     description,
-    category,
-    gender,
     street,
     postalCode,
     city,
@@ -64,7 +84,12 @@ export function updateTournament(
     end_date,
     registration_deadline,
     participant_limit,
-    applicationsOpen
+    applicationsOpen,
+    isGroupPhase,
+    setsToWin,
+    gamesPerSet,
+    tieBreakType,
+    categories,
   }
 ) {
   return prisma.tournament.update({
@@ -72,34 +97,48 @@ export function updateTournament(
     data: {
       name,
       description,
-      category,
-      gender,
       street,
       postalCode,
       city,
       country,
-      start_date: parseDate(start_date),
-      end_date: parseDate(end_date),
+      start_date: start_date ? parseDate(start_date) : undefined,
+      end_date: end_date ? parseDate(end_date) : undefined,
       registration_deadline: registration_deadline
         ? parseDate(registration_deadline)
-        : null,
+        : undefined,
       participant_limit: participant_limit
         ? Number(participant_limit)
-        : null,
-      applicationsOpen
-    }
+        : undefined,
+      applicationsOpen: applicationsOpen,
+      isGroupPhase,
+      setsToWin,
+      gamesPerSet,
+      tieBreakType,
+      categories: {
+        deleteMany: {},
+        create: categories.map(cat => ({
+          categoryName: cat.category,
+          gender: cat.gender,
+        })),
+      },
+    },
+    include: {
+      categories: true,
+    },
   });
 }
 
 export function findAllTournaments() {
   return prisma.tournament.findMany({
-    orderBy: { start_date: 'desc' }
+    orderBy: { start_date: 'desc' },
+    include: { categories: true }
   });
 }
 
 export function findTournamentById(id) {
   return prisma.tournament.findUnique({
-    where: { id: Number(id) }
+    where: { id: Number(id) },
+    include: { categories: true }
   });
 }
 
@@ -117,14 +156,17 @@ export function findTournamentsByOrganizer(userId) {
         {
           tournamentUserRoles: {
             some: {
-              userId:     Number(userId),
-              role:       'organizer'
+              userId: Number(userId),
+              role: 'organizer'
             }
           }
         }
       ]
     },
+    include: {
+      categories: true,
+      tournamentUserRoles: true,
+    },
     orderBy: { start_date: 'desc' }
   });
 }
-

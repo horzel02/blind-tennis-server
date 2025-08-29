@@ -65,3 +65,14 @@ export async function remove(req, res) {
   }
 }
 
+
+export const generateTournamentStructure = async (req, res) => {
+  const { tournamentId } = req.params;
+  try {
+    const result = await matchService.generateGroupAndKnockoutMatches(tournamentId);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Błąd generowania meczów:', error);
+    res.status(500).json({ error: error.message || 'Błąd serwera' });
+  }
+};

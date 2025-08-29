@@ -6,6 +6,8 @@ import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import './auth.js';
 import pg from 'pg';
 import connectPgSession from 'pg-session-store';
@@ -16,51 +18,45 @@ import registrationRoutes from './routes/registrations.js';
 import participantsRouter from './routes/participants.js';
 import tournamentUserRolesRouter from './routes/tournamentUserRoles.js';
 import usersRouter from './routes/users.js';
+import matchRoutes from './routes/matchRoutes.js';
 
 import prisma from './prismaClient.js';
 
 const app = express();
+const httpServer = createServer(app);
 app.set('trust proxy', 1);
 
 console.log('🛠️ cwd:', process.cwd());
 console.log('🛠️ DATABASE_URL:', process.env.DATABASE_URL);
 
-// Konfiguracja CORS
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  'http://localhost:5173'
-].filter(Boolean);
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site has been blocked by the server: ${origin}.`;
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true
-}));
+// CORS
+const allowedOrigins = [process.env.CLIENT_URL, 'http://localhost:5173'].filter(Boolean);
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = `The CORS policy for this site has been blocked by the server: ${origin}.`;
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
+// === SESJA (wspólna dla Express i Socket.io) ===
 const PgSessionStore = connectPgSession(session);
-
-// KONFIGURACJA sesji z pg-session-store
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: process.env.NODE_ENV === 'production' ? false : true
-  }
+  ...(process.env.NODE_ENV === 'production' && { ssl: { rejectUnauthorized: false } }),
 });
+const sessionStore = new PgSessionStore({ pool: pgPool, tableName: 'session' });
 
-const sessionStore = new PgSessionStore({
-  pool: pgPool, // <-- Tutaj pgPool jest już zdefiniowane
-  tableName: 'session'
-});
-
-app.use(session({
+// >>> WYCIĄGAMY MIDDLEWARE DO ZMIENNEJ
+const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -69,38 +65,23 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: 'none'
-  }
-}));
-
-app.use((req, res, next) => {
-  console.log('DEBUG: Stan req.session PRZED Passport.js:');
-  console.log('DEBUG:   req.sessionID:', req.sessionID);
-  console.log('DEBUG:   req.session (cały obiekt):', JSON.stringify(req.session, null, 2));
-  console.log('DEBUG:   req.session.passport istnieje (PRZED Passport.js):', !!req.session.passport);
-  next();
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  },
 });
 
+app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use((req, res, next) => {
-  console.log('DEBUG: Stan req.session PO Passport.js:');
-  console.log('DEBUG:   req.sessionID:', req.sessionID);
-  console.log('DEBUG:   req.session (cały obiekt - PO Passport.js):', JSON.stringify(req.session, null, 2));
-  console.log('DEBUG:   req.user (PO Passport.js):', JSON.stringify(req.user, null, 2));
-  console.log('DEBUG:   req.isAuthenticated() (PO Passport.js):', req.isAuthenticated());
-  next();
-});
-
-// Wyświetl URL z .env (wersja skrócona i pełna dla logów)
+// Log DB
 console.log('🔗 DATABASE_URL =', process.env.DATABASE_URL?.slice(0, 30) + '…');
 console.log('FULL DB URL:', process.env.DATABASE_URL);
 
-// Test połączenia z bazą danych
-prisma.$connect()
+// Prisma connect
+prisma
+  .$connect()
   .then(() => console.log('✔️ Połączono z DB'))
-  .catch(e => {
+  .catch((e) => {
     console.error('❌ BŁĄD Z PRISMĄ W INDEX.JS:');
     console.error('Błąd PrismaClientInitializationError:', e.name);
     console.error('Kod błędu (Prisma):', e.errorCode);
@@ -108,13 +89,106 @@ prisma.$connect()
     console.error('Stack trace:', e.stack);
   });
 
-// Ścieżki API
+// === Socket.io ===
+const io = new Server(httpServer, {
+  cors: {
+    origin: [process.env.CLIENT_URL, 'http://localhost:5173'].filter(Boolean),
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
+  },
+});
+
+// >>> PODPINAMY SESJĘ I PASSPORT DO SOCKET.IO
+io.use((socket, next) => sessionMiddleware(socket.request, {}, next));
+io.use((socket, next) =>
+  passport.initialize()(socket.request, {}, () =>
+    passport.session()(socket.request, {}, next)
+  )
+);
+
+app.set('socketio', io);
+
+// === ROUTES ===
 app.use('/api/auth', authRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/registrations', registrationRoutes);
 app.use('/api/tournaments', participantsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/tournaments/:id/roles', tournamentUserRolesRouter);
+app.use('/api/matches', matchRoutes);
+
+// === SOCKET HANDLERS ===
+io.on('connection', (socket) => {
+  const authedUser = socket.request.user || null;
+  console.log('🔌 Socket connected user:', authedUser ? authedUser.id : 'anon');
+
+  socket.on('join-match', (matchId) => {
+    socket.join(`match-${parseInt(matchId, 10)}`);
+  });
+  socket.on('leave-match', (matchId) => {
+    socket.leave(`match-${parseInt(matchId, 10)}`);
+  });
+
+  socket.on('join-tournament', (tournamentId) => {
+    socket.join(`tournament-${parseInt(tournamentId, 10)}`);
+  });
+  socket.on('leave-tournament', (tournamentId) => {
+    socket.leave(`tournament-${parseInt(tournamentId, 10)}`);
+  });
+
+  // LIVE punkty z autoryzacją
+  socket.on('real-time-score-update', async (data) => {
+    try {
+      const userId = socket.request?.user?.id;
+      if (!userId) {
+        return socket.emit('error', { error: 'Nieautoryzowany' });
+      }
+
+      const matchId = parseInt(data.matchId, 10);
+      if (Number.isNaN(matchId)) {
+        return socket.emit('error', { error: 'Błędne matchId' });
+      }
+
+      const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        select: { id: true, refereeId: true, tournamentId: true, status: true },
+      });
+      if (!match) {
+        return socket.emit('error', { error: 'Mecz nie znaleziono' });
+      }
+
+      // czy sędzia tego meczu?
+      const isReferee = match.refereeId === userId;
+      // albo organizer turnieju?
+      const isOrganizer = !!(await prisma.tournamentuserrole.findFirst({
+        where: { tournamentId: match.tournamentId, userId, role: 'organizer' },
+        select: { id: true },
+      }));
+
+      if (!isReferee && !isOrganizer) {
+        return socket.emit('error', { error: 'Brak uprawnień do live wyniku' });
+      }
+
+      // autoryzowany → emit aktualizacji do pokoju meczu
+      io.to(`match-${matchId}`).emit('real-time-score-update', data);
+
+      // podniesienie statusu do in_progress (pierwsza akcja)
+      if (match.status === 'scheduled') {
+        await prisma.match.update({
+          where: { id: matchId },
+          data: { status: 'in_progress', updatedAt: new Date() },
+        });
+        io.to(`tournament-${match.tournamentId}`).emit('match-status-changed', {
+          matchId,
+          status: 'in_progress',
+        });
+      }
+    } catch (e) {
+      console.error('real-time-score-update error:', e);
+      socket.emit('error', { error: 'Błąd serwera' });
+    }
+  });
+});
 
 const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`Server on port ${port}`));
+httpServer.listen(port, () => console.log(`Server on port ${port}`));

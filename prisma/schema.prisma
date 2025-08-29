@@ -1,108 +1,184 @@
+// schema.prisma
+
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model roles {
-  id                Int            @id @default(autoincrement())
-  role_name         String         @unique(map: "role_name") @db.VarChar(50)
-  creation_date     DateTime       @default(now()) @db.Timestamp(0)
-  modification_date DateTime       @default(now()) @db.Timestamp(0)
-  active            Boolean        @default(true)
-  user_roles        user_roles[]
+  id                Int            @id @default(autoincrement())
+  role_name         String         @unique(map: "role_name") @db.VarChar(50)
+  creation_date     DateTime       @default(now()) @db.Timestamp(0)
+  modification_date DateTime       @default(now()) @db.Timestamp(0)
+  active            Boolean        @default(true)
+  user_roles        user_roles[]
 }
 
 model tournament {
-  id                      Int                    @id @default(autoincrement())
-  name                    String                 @db.VarChar(255)
-  description             String?                @db.Text
-  category                String                 @db.VarChar(10)
-  gender                  String                 @db.VarChar(10)
-  street                  String                 @db.VarChar(255)
-  postalCode              String                 @db.VarChar(10)
-  city                    String                 @db.VarChar(100)
-  country                 String                 @db.VarChar(100)
-  start_date              DateTime               @db.Date
-  end_date                DateTime               @db.Date
-  registration_deadline   DateTime?
-  participant_limit       Int?
-  applicationsOpen        Boolean                @default(true)
-  type                    String                 @default("open") @db.VarChar(10) // "open" | "invite"
-  organizer_id            Int
-  organizer               users                  @relation(fields: [organizer_id], references: [id])
-  created_at              DateTime               @default(now()) @db.Timestamp(0)
-  updated_at              DateTime               @default(now()) @db.Timestamp(0)
+  id                      Int                    @id @default(autoincrement())
+  name                    String                 @db.VarChar(255)
+  description             String?                @db.Text
+  street                  String                 @db.VarChar(255)
+  postalCode              String                 @db.VarChar(10)
+  city                    String                 @db.VarChar(100)
+  country                 String                 @db.VarChar(100)
+  start_date              DateTime               @db.Date
+  end_date                DateTime               @db.Date
+  registration_deadline   DateTime?
+  participant_limit       Int?
+  applicationsOpen        Boolean                @default(true)
+  type                    String                 @default("open") @db.VarChar(10) // "open" | "invite"
+  organizer_id            Int
+  organizer               users                  @relation(fields: [organizer_id], references: [id])
+  created_at              DateTime               @default(now()) @db.Timestamp(0)
+  updated_at              DateTime               @default(now()) @db.Timestamp(0)
 
-  // relacja do zgłoszeń (tournamentregistration) - Zmieniona nazwa
-  tournamentRegistrations tournamentregistration[]
+  status                  String                 @default("registration_open") @db.VarChar(20)
+  isGroupPhase            Boolean                @default(false)
+  isGenderSeparated       Boolean                @default(false)
+  setsToWin               Int                    @default(2)
+  gamesPerSet             Int                    @default(4)
+  tieBreakType            String                 @default("super") @db.VarChar(30)
 
-  // relacja do per-turniejowych ról - Zmieniona nazwa
-  tournamentUserRoles     tournamentuserrole[]
+  tournamentRegistrations tournamentregistration[]
+  tournamentUserRoles     tournamentuserrole[]
+  categories              TournamentCategory[]
+  matches                 Match[]
 }
 
 model user_roles {
-  id              Int      @id @default(autoincrement())
-  user_id         Int
-  role_id         Int
-  assignment_date DateTime @default(now()) @db.Timestamp(0)
-  users           users    @relation(fields: [user_id], references: [id], onUpdate: Restrict, map: "user_roles_ibfk_1")
-  roles           roles    @relation(fields: [role_id], references: [id], onUpdate: Restrict, map: "user_roles_ibfk_2")
+  id                Int      @id @default(autoincrement())
+  user_id           Int
+  role_id           Int
+  assignment_date   DateTime @default(now()) @db.Timestamp(0)
 
-  @@index([role_id], map: "role_id")
-  @@index([user_id], map: "user_id")
+  users             users    @relation(fields: [user_id], references: [id], onUpdate: Restrict, map: "user_roles_ibfk_1")
+  roles             roles    @relation(fields: [role_id], references: [id], onUpdate: Restrict, map: "user_roles_ibfk_2")
+
+  @@index([role_id], map: "role_id")
+  @@index([user_id], map: "user_id")
 }
 
 model users {
-  id                      Int                      @id @default(autoincrement())
-  name                    String                   @db.VarChar(100)
-  surname                 String                   @db.VarChar(100)
-  email                   String                   @unique(map: "email") @db.VarChar(100)
-  password_hash           String                   @db.VarChar(255)
-  creation_date           DateTime                 @default(now()) @db.Timestamp(0)
-  modification_date       DateTime                 @default(now()) @db.Timestamp(0)
-  active                  Boolean                  @default(true)
-  user_roles              user_roles[]
-  tournaments             tournament[]
+  id                Int                    @id @default(autoincrement())
+  name              String                 @db.VarChar(100)
+  surname           String                 @db.VarChar(100)
+  email             String                 @unique(map: "email") @db.VarChar(100)
+  password_hash     String                 @db.VarChar(255)
+  creation_date     DateTime               @default(now()) @db.Timestamp(0)
+  modification_date DateTime               @default(now()) @db.Timestamp(0)
+  active            Boolean                @default(true)
 
-  // relacja do zgłoszeń (tournamentregistration) - Zmieniona nazwa
-  tournamentRegistrations tournamentregistration[]
-
-  // relacja do per-turniejowych ról - Zmieniona nazwa
-  tournamentUserRoles     tournamentuserrole[]
+  user_roles            user_roles[]
+  tournaments           tournament[]
+  tournamentRegistrations tournamentregistration[]
+  tournamentUserRoles   tournamentuserrole[]
+  matchesAsPlayer1      Match[]                @relation("Player1Matches")
+  matchesAsPlayer2      Match[]                @relation("Player2Matches")
+  matchesAsReferee      Match[]                @relation("RefereeMatches")
+  matchesWon            Match[]                @relation("WinnerMatches")
 }
 
-model tournamentregistration { // Zmieniona nazwa modelu na małe litery
-  id            Int      @id @default(autoincrement())
-  tournamentId  Int
-  userId        Int
-  status        String   @default("pending") @db.VarChar(10) // "pending" | "accepted" | "rejected" | "invited"
-  createdAt     DateTime @default(now()) @db.Timestamp(0)
-  updatedAt     DateTime @default(now()) @updatedAt
-  invitedBy     Int?
+model tournamentregistration {
+  id                Int      @id @default(autoincrement())
+  tournamentId      Int
+  userId            Int
+  blindnessCategory String?   @db.VarChar(10)
+  gender            String?   @db.VarChar(10)
+  status            String   @default("pending") @db.VarChar(10)
+  createdAt         DateTime @default(now()) @db.Timestamp(0)
+  updatedAt         DateTime @default(now()) @updatedAt
+  invitedBy         Int?
 
-  tournament    tournament @relation(fields: [tournamentId], references: [id])
-  user          users      @relation(fields: [userId], references: [id])
+  tournament        tournament @relation(fields: [tournamentId], references: [id])
+  user              users      @relation(fields: [userId], references: [id])
 
-  @@index([tournamentId], map: "TournamentRegistration_tournamentId_index") // Mapy indeksów pozostają z oryginalnymi nazwami, to ok
-  @@index([userId], map: "TournamentRegistration_userId_index")           // ponieważ odwołują się do wewnętrznych nazw, nie publicznych tabel
-  @@index([invitedBy])
+  @@index([tournamentId])
+  @@index([userId])
+  @@index([invitedBy])
 }
 
-model tournamentuserrole { // Zmieniona nazwa modelu na małe litery
-  id            Int      @id @default(autoincrement())
-  tournamentId  Int
-  userId        Int
-  role          String   @db.VarChar(20) // "organizer" | "participant" | "referee"
-  createdAt     DateTime @default(now())
+model tournamentuserrole {
+  id            Int      @id @default(autoincrement())
+  tournamentId  Int
+  userId        Int
+  role          String   @db.VarChar(20)
+  createdAt     DateTime @default(now())
 
-  tournament    tournament @relation(fields: [tournamentId], references: [id])
-  user          users      @relation(fields: [userId], references: [id])
+  tournament    tournament @relation(fields: [tournamentId], references: [id])
+  user          users      @relation(fields: [userId], references: [id])
 
-  @@unique([tournamentId, userId, role])
-  @@index([tournamentId])
-  @@index([userId])
+  @@unique([tournamentId, userId, role])
+  @@index([tournamentId])
+  @@index([userId])
+}
+
+model TournamentCategory {
+  id            Int       @id @default(autoincrement())
+  tournamentId  Int
+  categoryName  String    @db.VarChar(10)
+  gender        String    @db.VarChar(10)
+  createdAt     DateTime  @default(now())
+
+  tournament    tournament @relation(fields: [tournamentId], references: [id])
+  matches       Match[]
+
+  @@unique([tournamentId, categoryName, gender])
+  @@index([tournamentId])
+}
+
+model Match {
+  id                   Int                @id @default(autoincrement())
+  tournamentId         Int
+  tournamentCategoryId Int
+  round                String             @db.VarChar(50)
+  player1Id            Int?
+  player2Id            Int?
+  refereeId            Int?
+  winnerId             Int?
+  status               String             @default("scheduled") @db.VarChar(20)
+  courtNumber          String?            @db.VarChar(10)
+  matchTime            DateTime?
+
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @default(now()) @updatedAt
+
+  tournament           tournament         @relation(fields: [tournamentId], references: [id])
+  category             TournamentCategory @relation(fields: [tournamentCategoryId], references: [id])
+  player1              users?             @relation("Player1Matches", fields: [player1Id], references: [id])
+  player2              users?             @relation("Player2Matches", fields: [player2Id], references: [id])
+  referee              users?             @relation("RefereeMatches", fields: [refereeId], references: [id])
+  winner               users?             @relation("WinnerMatches", fields: [winnerId], references: [id])
+  matchSets            MatchSet[]
+
+  @@index([tournamentId])
+  @@index([tournamentCategoryId])
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([refereeId])
+}
+
+model MatchSet {
+  id              Int      @id @default(autoincrement())
+  matchId         Int
+  setNumber       Int
+  player1Score    Int
+  player2Score    Int
+
+  match           Match    @relation(fields: [matchId], references: [id])
+
+  @@unique([matchId, setNumber])
+  @@index([matchId])
+}
+
+model session {
+  sid          String @id
+  sess         String
+  expire       DateTime
+  
+  @@index([expire])
 }
