@@ -1,21 +1,38 @@
-// server/routes/matchRoutes.js
 import { Router } from 'express';
 import * as matchController from '../controllers/matchController.js';
 import { ensureAuth } from '../middlewares/auth.js';
-import { ensureMatchRefereeOrOrganizer, ensureMatchOrganizer, ensureTournamentOrganizerFromBody } from '../middlewares/matchAuth.js';
+import { ensureMatchRefereeOrOrganizer, ensureMatchOrganizer } from '../middlewares/matchAuth.js';
 import { ensureTournyOrg } from './tournaments.js';
 
 const router = Router();
 
+// Generowanie grup + pusty szkielet KO (jeśli tak masz w serwisie)
 router.post('/:tournamentId/generate-matches', ensureAuth, ensureTournyOrg, matchController.generateTournamentStructure);
+
+// Lista meczów / pojedyńczy mecz
 router.get('/:tournamentId/matches', matchController.getMatchesByTournamentId);
 router.get('/:matchId', matchController.getMatchById);
+
+// Wyniki i sędziowie
 router.put('/:matchId/score', ensureAuth, ensureMatchRefereeOrOrganizer, matchController.updateMatchScore);
-
-// pojedynczy – tylko organizator meczu/turnieju
 router.put('/:matchId/referee', ensureAuth, ensureMatchOrganizer, matchController.setMatchReferee);
+router.put('/referee/bulk', ensureAuth, matchController.assignRefereeBulk);
 
-// BULK – organizator turnieju na podstawie tournamentId w body
-router.put('/referee/bulk', ensureAuth, ensureTournamentOrganizerFromBody, matchController.assignRefereeBulk);
+// Tabele grupowe
+router.get('/:tournamentId/group-standings', matchController.getGroupStandings);
+
+// Zasiew KO (pełny/tylko puste/itd.)
+router.post('/:tournamentId/seed-knockout', ensureAuth, ensureTournyOrg, matchController.seedKnockout);
+
+// Reset KO od wybranej rundy (np. '1/8', 'Ćwierćfinał', 'SF', 'F')
+router.post('/:tournamentId/reset-from', ensureAuth, ensureTournyOrg, matchController.resetKnockoutFromRound);
+
+// Ręczne parowanie i blokada
+router.put('/:matchId/pairing', ensureAuth, ensureMatchOrganizer, matchController.setPairing);
+router.put('/:matchId/lock', ensureAuth, ensureMatchOrganizer, matchController.setLocked);
+
+// Kto może być wybrany do meczu KO
+router.get('/:matchId/eligible', ensureAuth, ensureMatchOrganizer, matchController.getEligiblePlayersForMatch);
+
 
 export default router;
