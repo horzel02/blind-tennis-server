@@ -57,9 +57,21 @@ export const updateMatchScore = async (req, res) => {
 
 export const generateTournamentStructure = async (req, res) => {
   const { tournamentId } = req.params;
+  const io = req.app.get('socketio');
+
   try {
-    const result = await matchService.generateGroupAndKnockoutMatches(tournamentId);
-    res.status(200).json(result);
+    const t = await prisma.tournament.findUnique({
+      where: { id: Number(tournamentId) },
+      select: { id: true, format: true }
+    });
+    if (!t) return res.status(404).json({ error: 'Turniej nie znaleziono' });
+
+    const result = (t.format === 'KO_ONLY')
+      ? await matchService.generateKnockoutOnly(tournamentId)
+      : await matchService.generateGroupAndKnockoutMatches(tournamentId);
+
+    io?.to(`tournament-${Number(tournamentId)}`).emit('matches-invalidate', { reason: 'generate' });
+    return res.status(200).json(result);
   } catch (error) {
     console.error('Błąd generowania meczów:', error);
     res.status(500).json({ error: error.message || 'Błąd serwera' });
@@ -229,23 +241,18 @@ export const seedKnockout = async (req, res) => {
 // === DODAJ: reset KO od podanej rundy ===
 export const resetKnockoutFromRound = async (req, res) => {
   const io = req.app.get('socketio');
-  const { tournamentId } = req.params;
-  const { fromRound, from, hard = false } = req.body || {};
-
   try {
-    const out = await matchService.resetKnockoutFromRound(
-      tournamentId,
-      fromRound ?? from ?? '1/8',
-      { hard }
-    );
-
-    io?.to(`tournament-${Number(tournamentId)}`).emit('matches-invalidate', { reason: 'reset' });
-    return res.json(out);
+    const { from } = req.body || {};
+    const out = await matchService.resetKnockoutFromRound(req.params.tournamentId, from);
+    io?.to(`tournament-${Number(req.params.tournamentId)}`)
+      .emit('matches-invalidate', { reason: 'reset-from', from: out.from });
+    res.json(out);
   } catch (e) {
     console.error('resetKnockoutFromRound error:', e);
-    return res.status(400).json({ error: e.message || 'Błąd resetu KO' });
+    res.status(400).json({ error: e.message || 'Błąd resetu od etapu' });
   }
 };
+
 
 
 

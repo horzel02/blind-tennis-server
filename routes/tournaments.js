@@ -80,4 +80,8 @@ router.delete('/:id/roles/:roleId', ensureAuth, ensureTournyOrg, rolesController
 router.post('/:tournamentId/generate-matches', ensureAuth, ensureTournyOrg, matchController.generateTournamentStructure);
 router.get('/:tournamentId/matches', matchController.getMatchesByTournamentId);
 
+// Ustawienia turnieju
+router.get('/:id/settings', ensureAuth, tournamentController.getTournamentSettings);
+router.put('/:id/settings', ensureAuth, tournamentController.updateTournamentSettings);
+
 export default router;

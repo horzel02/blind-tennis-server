@@ -76,3 +76,86 @@ export const generateTournamentStructure = async (req, res) => {
     res.status(500).json({ error: error.message || 'Błąd serwera' });
   }
 };
+
+export const getTournamentSettings = async (req, res) => {
+  try {
+    const t = await prisma.tournament.findUnique({
+      where: { id: Number(req.params.id) },
+      select: {
+        // to, z czego korzystamy w generatorach/seedingu:
+        format: true,
+        groupSize: true,
+        qualifiersPerGroup: true,
+        allowByes: true,
+        koSeedingPolicy: true,
+        avoidSameGroupInR1: true,
+        // możesz dorzucić to, co chcesz pokazać w UI:
+        applicationsOpen: true,
+        participant_limit: true,
+      },
+    });
+    if (!t) return res.status(404).json({ error: 'Turniej nie znaleziony' });
+    res.json(t);
+  } catch (e) {
+    console.error('getTournamentSettings error:', e);
+    res.status(500).json({ error: 'Błąd serwera' });
+  }
+};
+
+export const updateTournamentSettings = async (req, res) => {
+  try {
+    const {
+      format,
+      groupSize,
+      qualifiersPerGroup,
+      allowByes,
+      koSeedingPolicy,
+      avoidSameGroupInR1,
+    } = req.body || {};
+
+    const data = {};
+    if (typeof format !== 'undefined') data.format = format;
+    if (typeof groupSize !== 'undefined') data.groupSize = groupSize === null ? null : Number(groupSize);
+    if (typeof qualifiersPerGroup !== 'undefined') data.qualifiersPerGroup = qualifiersPerGroup === null ? null : Number(qualifiersPerGroup);
+    if (typeof allowByes !== 'undefined') data.allowByes = !!allowByes;
+    if (typeof koSeedingPolicy !== 'undefined') data.koSeedingPolicy = koSeedingPolicy;
+    if (typeof avoidSameGroupInR1 !== 'undefined') data.avoidSameGroupInR1 = !!avoidSameGroupInR1;
+
+    const updated = await prisma.tournament.update({
+      where: { id: Number(req.params.id) },
+      data,
+      select: {
+        id: true,
+        format: true,
+        groupSize: true,
+        qualifiersPerGroup: true,
+        allowByes: true,
+        koSeedingPolicy: true,
+        avoidSameGroupInR1: true,
+      },
+    });
+
+    res.json(updated);
+  } catch (e) {
+    console.error('updateTournamentSettings error:', e);
+    res.status(500).json({ error: 'Błąd serwera' });
+  }
+};
+
+export async function createRegistration(req, res) {
+  try {
+    const reg = await tournamentService.registerForTournament(req.params.id, req.user.id);
+    res.json(reg);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+}
+
+export async function changeRegistrationStatus(req, res) {
+  try {
+    const upd = await tournamentService.updateRegistrationStatus(req.params.registrationId, req.body.status);
+    res.json(upd);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+}

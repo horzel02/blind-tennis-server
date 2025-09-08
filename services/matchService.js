@@ -4,7 +4,7 @@ import prisma from '../prismaClient.js';
 /* --------------------------------- HELPERY -------------------------------- */
 
 // ranking kluczy rund KO
-const KEY_RANK = { F:1, SF:2, QF:3, R16:4, R32:5, R64:6, R128:7 };
+const KEY_RANK = { F: 1, SF: 2, QF: 3, R16: 4, R32: 5, R64: 6, R128: 7 };
 function keyToRank(key) { return key ? KEY_RANK[key] ?? null : null; }
 
 // round string -> klucz (F/SF/QF/R16/...)
@@ -44,18 +44,18 @@ function canonicalRoundLabelByKey(key, idx) {
 
 // query dopasowujące różne zapisy danej rundy
 function queryForKey(key) {
-  if (key === 'F')    return { round: { contains: 'finał', mode: 'insensitive' } };
-  if (key === 'SF')   return { round: { contains: 'półfina', mode: 'insensitive' } };
-  if (key === 'QF')   return { round: { contains: 'ćwierćfina', mode: 'insensitive' } };
-  if (key === 'R16')  return { round: { contains: '1/8', mode: 'insensitive' } };
-  if (key === 'R32')  return { round: { contains: '1/16', mode: 'insensitive' } };
-  if (key === 'R64')  return { round: { contains: '1/32', mode: 'insensitive' } };
+  if (key === 'F') return { round: { contains: 'finał', mode: 'insensitive' } };
+  if (key === 'SF') return { round: { contains: 'półfina', mode: 'insensitive' } };
+  if (key === 'QF') return { round: { contains: 'ćwierćfina', mode: 'insensitive' } };
+  if (key === 'R16') return { round: { contains: '1/8', mode: 'insensitive' } };
+  if (key === 'R32') return { round: { contains: '1/16', mode: 'insensitive' } };
+  if (key === 'R64') return { round: { contains: '1/32', mode: 'insensitive' } };
   if (key === 'R128') return { round: { contains: '1/64', mode: 'insensitive' } };
   return { round: { contains: 'finał', mode: 'insensitive' } };
 }
 
 // roundOrder do sortowania
-const ROUND_ORDER_MAP = { R128:1, R64:2, R32:3, R16:4, QF:5, SF:6, F:7 };
+const ROUND_ORDER_MAP = { R128: 1, R64: 2, R32: 3, R16: 4, QF: 5, SF: 6, F: 7 };
 function roundOrderForKey(key) { return ROUND_ORDER_MAP[key] ?? 99; }
 
 function getRegModel() {
@@ -103,7 +103,7 @@ function hashStr(s) {
 }
 function mulberry32(seed) {
   let t = seed >>> 0;
-  return function() {
+  return function () {
     t += 0x6D2B79F5;
     let r = Math.imul(t ^ (t >>> 15), 1 | t);
     r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
@@ -113,13 +113,6 @@ function mulberry32(seed) {
 function makeRNG(randomSeed) {
   if (Number.isFinite(randomSeed)) return mulberry32(Number(randomSeed));
   return Math.random; // fallback
-}
-function shuffleInPlace(arr, rnd = Math.random) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 function shuffledIndices(n, rand = Math.random) {
   const a = Array.from({ length: n }, (_, i) => i);
@@ -161,9 +154,72 @@ function extractRoundIndex(round) {
 }
 function nextKeyOf(key) {
   if (key === 'R16') return 'QF';
-  if (key === 'QF')  return 'SF';
-  if (key === 'SF')  return 'F';
+  if (key === 'QF') return 'SF';
+  if (key === 'SF') return 'F';
   return null;
+}
+
+async function readTournamentSettings(tId) {
+  const t = await prisma.tournament.findUnique({
+    where: { id: tId },
+    select: {
+      format: true,                 // 'GROUPS_KO' | 'KO_ONLY'
+      groupSize: true,              // 3 | 4 (domyślnie 4)
+      qualifiersPerGroup: true,     // 1 | 2 (domyślnie 2)
+      allowByes: true,              // true/false (domyślnie true)
+      koSeedingPolicy: true,        // 'RANDOM_CROSS' | 'STRUCTURED'
+      avoidSameGroupInR1: true,     // true/false
+    },
+  });
+
+  return {
+    format: t?.format || 'GROUPS_KO',
+    groupSize: t?.groupSize || 4,
+    qualifiersPerGroup: t?.qualifiersPerGroup || 2,
+    allowByes: t?.allowByes ?? true,
+    koSeedingPolicy: t?.koSeedingPolicy || 'RANDOM_CROSS',
+    avoidSameGroupInR1: t?.avoidSameGroupInR1 ?? true,
+  };
+}
+
+function smallestPowerOfTwoGE(n) {
+  const POWS = [2,4,8,16,32,64,128];
+  for (const p of POWS) if (p >= n) return p;
+  return 128;
+}
+
+function smallestPow2GE(n) { let p = 1; while (p < n) p <<= 1; return p; }
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function baseKeyForSize(size) {
+  if (size >= 128) return 'R128';
+  if (size >=  64) return 'R64';
+  if (size >=  32) return 'R32';
+  if (size >=  16) return 'R16';
+  if (size ===  8) return 'QF';
+  if (size ===  4) return 'SF';
+  return 'F';
+}
+function chainFrom(baseKey) {
+  const order = ['R128', 'R64', 'R32', 'R16', 'QF', 'SF', 'F'];
+  const i = order.indexOf(baseKey);
+  return i >= 0 ? order.slice(i) : ['F'];
+}
+function pairsCountForKey(key) {
+  return key === 'R128' ? 64
+       : key === 'R64'  ? 32
+       : key === 'R32'  ? 16
+       : key === 'R16'  ?  8
+       : key === 'QF'   ?  4
+       : key === 'SF'   ?  2
+       :                   1;
 }
 
 // Upewnia się, że runda ma dokładnie N meczów (bez duplikatów, ładne etykiety)
@@ -171,14 +227,14 @@ async function ensureRoundPlaceholders(tId, roundKey, neededCount, categoryId) {
   const existing = await prisma.match.findMany({
     where: { tournamentId: tId, ...queryForKey(roundKey) },
     orderBy: { id: 'asc' },
-    select: { id:true, round:true, player1Id:true, player2Id:true, locked:true, status:true }
+    select: { id: true, round: true, player1Id: true, player2Id: true, locked: true, status: true }
   });
 
   const tx = [];
 
   // normalizacja etykiet istniejących (spójność UI)
   for (let i = 0; i < Math.min(neededCount, existing.length); i++) {
-    const desired = canonicalRoundLabelByKey(roundKey, roundKey === 'F' ? null : (i+1));
+    const desired = canonicalRoundLabelByKey(roundKey, roundKey === 'F' ? null : (i + 1));
     if (existing[i].round !== desired) {
       tx.push(prisma.match.update({
         where: { id: existing[i].id },
@@ -207,6 +263,30 @@ async function ensureRoundPlaceholders(tId, roundKey, neededCount, categoryId) {
     where: { tournamentId: tId, ...queryForKey(roundKey) },
     orderBy: [{ round: 'asc' }, { id: 'asc' }],
   });
+}
+
+// CHANGED/NEW helper w matchService.js — wstaw blisko innych helperów
+async function getTournamentSettings(tId) {
+  const t = await prisma.tournament.findUnique({
+    where: { id: tId },
+    select: {
+      format: true,
+      groupSize: true,
+      qualifiersPerGroup: true,
+      allowByes: true,
+      koSeedingPolicy: true,
+      avoidSameGroupInR1: true,
+    }
+  });
+  // sensowne defaulty jeśli coś null
+  return {
+    format: t?.format || 'KO_ONLY',
+    groupSize: t?.groupSize ?? 4,
+    qualifiersPerGroup: t?.qualifiersPerGroup ?? 2,
+    allowByes: t?.allowByes ?? true,
+    koSeedingPolicy: t?.koSeedingPolicy || 'RANDOM_CROSS',
+    avoidSameGroupInR1: t?.avoidSameGroupInR1 ?? true,
+  };
 }
 
 // czyści WSZYSTKIE mecze turnieju (używane w generatorze grup)
@@ -255,7 +335,7 @@ export async function getMatchesByTournamentId(tournamentId, status) {
       player2: { select: { id: true, name: true, surname: true } },
       category: { select: { categoryName: true, gender: true } },
       referee: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
+      winner: { select: { id: true, name: true, surname: true } },
       matchSets: true,
     },
     orderBy: [{ round: 'asc' }, { id: 'asc' }],
@@ -268,7 +348,7 @@ export async function getMatchById(matchId) {
     include: {
       player1: { select: { id: true, name: true, surname: true } },
       player2: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
+      winner: { select: { id: true, name: true, surname: true } },
       referee: { select: { id: true, name: true, surname: true } },
       category: true,
       tournament: true,
@@ -281,10 +361,12 @@ export async function getMatchById(matchId) {
 
 export async function generateGroupAndKnockoutMatches(tournamentId) {
   const tId = parseInt(tournamentId, 10);
-  const playersPerGroup = 4;
 
   const Reg = getRegModel();
   const Category = getCategoryModel();
+  const {
+    format, groupSize, qualifiersPerGroup
+  } = await readTournamentSettings(tId);
 
   // zaakceptowani
   const accepted = await Reg.findMany({
@@ -293,24 +375,44 @@ export async function generateGroupAndKnockoutMatches(tournamentId) {
   });
   const playerIds = accepted.map(p => p.userId);
 
-  if (playerIds.length < 4 || playerIds.length % playersPerGroup !== 0) {
-    throw new Error(`Aby utworzyć grupy, potrzeba wielokrotności ${playersPerGroup} graczy (min. 4).`);
-  }
-
   const category = await Category.findFirst({
     where: { tournamentId: tId },
     select: { id: true },
   });
-  if (!category) {
-    throw new Error('Brak kategorii w tym turnieju. Utwórz najpierw kategorię.');
-  }
+  if (!category) throw new Error('Brak kategorii w tym turnieju. Utwórz najpierw kategorię.');
 
-  // wyczyść wszystkie mecze turnieju (z setami/linkami, bez łamania FK)
+  // wyczyść WSZYSTKO
   await wipeTournamentMatches(tId);
 
-  // rozlosuj i zbuduj grupy (A, B, C, ...)
+  // KO_ONLY → bez grup, tylko szkielet KO (bazowy), pary ustawi później seedKnockout
+  if (format === 'KO_ONLY') {
+    const entrants = playerIds.length;
+    if (entrants < 2) return { count: 0 };
+
+    const bracketSize = smallestPowerOfTwoGE(entrants); // np. 12 → 16
+    // wybór bazowego klucza (obsługujemy do R128)
+    const key = bracketSize >= 128 ? 'R128'
+              : bracketSize === 64 ? 'R64'
+              : bracketSize === 32 ? 'R32'
+              : bracketSize === 16 ? 'R16'
+              : bracketSize === 8  ? 'QF'
+              : bracketSize === 4  ? 'SF'
+              : 'F';
+
+    // utwórz placeholdery bazowej rundy
+    await ensureRoundPlaceholders(tId, key, bracketSize / 2, category.id);
+    // wyższe rundy i tak będą tworzone on-demand w seedKnockout() przez cascade()
+    return { count: bracketSize / 2 };
+  }
+
+  // GROUPS_KO
+  if (playerIds.length < groupSize || (playerIds.length % groupSize !== 0)) {
+    throw new Error(`Aby utworzyć grupy, liczba graczy musi być wielokrotnością ${groupSize} (min. ${groupSize}).`);
+  }
+
+  // grupy
   playerIds.sort(() => Math.random() - 0.5);
-  const numberOfGroups = playerIds.length / playersPerGroup;
+  const numberOfGroups = playerIds.length / groupSize;
   const groupName = (idx) => `Grupa ${String.fromCharCode(65 + idx)}`;
 
   const data = [];
@@ -318,8 +420,6 @@ export async function generateGroupAndKnockoutMatches(tournamentId) {
   // FAZA GRUPOWA
   for (let g = 0; g < numberOfGroups; g++) {
     const name = groupName(g);
-
-    // nagłówek grupy (ułatwia render w UI)
     data.push({
       tournamentId: tId,
       tournamentCategoryId: category.id,
@@ -330,7 +430,7 @@ export async function generateGroupAndKnockoutMatches(tournamentId) {
       stage: 'group',
     });
 
-    const ids = playerIds.slice(g * playersPerGroup, (g + 1) * playersPerGroup);
+    const ids = playerIds.slice(g * groupSize, (g + 1) * groupSize);
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         data.push({
@@ -346,28 +446,35 @@ export async function generateGroupAndKnockoutMatches(tournamentId) {
     }
   }
 
-  // FAZA KO – szkielet (QF, SF, F)
-  const addKO = (roundKey, count) => {
-    for (let i = 1; i <= count; i++) {
-      data.push({
-        tournamentId: tId,
-        tournamentCategoryId: category.id,
-        player1Id: null,
-        player2Id: null,
-        round: canonicalRoundLabelByKey(roundKey, roundKey === 'F' ? null : i),
-        status: 'scheduled',
-        stage: 'knockout',
-      });
-    }
-  };
-  addKO('QF', 4);
-  addKO('SF', 2);
-  addKO('F', 1);
+  // KO – tylko bazowa runda na podstawie liczby awansujących (1 lub 2 z grup)
+  const entrants = numberOfGroups * (qualifiersPerGroup || 2);
+  const baseKey = entrants >= 64 ? 'R64'
+                : entrants >= 32 ? 'R32'
+                : entrants >= 16 ? 'R16'
+                : entrants === 8 ? 'QF'
+                : entrants === 4 ? 'SF'
+                : 'F';
+  const baseCount = baseKey === 'R64' ? 32
+                   : baseKey === 'R32' ? 16
+                   : baseKey === 'R16' ? 8
+                   : baseKey === 'QF'  ? 4
+                   : baseKey === 'SF'  ? 2
+                   : 1;
 
-  if (data.length) {
-    await prisma.match.createMany({ data });
+  for (let i = 1; i <= baseCount; i++) {
+    data.push({
+      tournamentId: tId,
+      tournamentCategoryId: category.id,
+      player1Id: null,
+      player2Id: null,
+      round: canonicalRoundLabelByKey(baseKey, baseKey === 'F' ? null : i),
+      status: 'scheduled',
+      stage: 'knockout',
+      roundOrder: roundOrderForKey(baseKey),
+    });
   }
 
+  if (data.length) await prisma.match.createMany({ data });
   return { count: data.length };
 }
 
@@ -471,7 +578,7 @@ export async function getGroupStandings(tournamentId) {
         const h2h = groupMatches.find(m =>
           parseGroupLetter(m.round) === letter &&
           ((m.player1?.id === a.userId && m.player2?.id === b.userId) ||
-           (m.player1?.id === b.userId && m.player2?.id === a.userId))
+            (m.player1?.id === b.userId && m.player2?.id === a.userId))
         );
         if (h2h && h2h.winnerId && h2h.winnerId === b.userId) {
           rows[i] = b; rows[i + 1] = a;
@@ -487,17 +594,19 @@ export async function getGroupStandings(tournamentId) {
 }
 
 // kwalifikanci TOP2 z grup
-async function computeQualifiersTop2(tId) {
+async function computeQualifiersDynamic(tId) {
+  const { qualifiersPerGroup = 2 } = await readTournamentSettings(tId);
   const tables = await getGroupStandings(tId);
   const byGroup = {};
   for (const g of tables) {
-    const top = g.standings?.slice(0, 2) || [];
+    const top = g.standings?.slice(0, qualifiersPerGroup) || [];
     byGroup[g.group] = top.map(x => x.userId).filter(Boolean);
   }
-  const groups = Object.keys(byGroup).sort();
+  const groups = Object.keys(byGroup).sort(); // 'Grupa A', 'Grupa B', ...
   const winners = groups.map(g => byGroup[g][0]).filter(Boolean);
-  const runners = groups.map(g => byGroup[g][1]).filter(Boolean);
-  return { groups, winners, runners, qualifiers: [...winners, ...runners] };
+  const runners = qualifiersPerGroup >= 2 ? groups.map(g => byGroup[g][1]).filter(Boolean) : [];
+  const entrants = winners.length + runners.length;
+  return { groups, winners, runners, entrants, qualifiersPerGroup };
 }
 
 /* ------------------------------ SEED KNOCKOUT ------------------------------ */
@@ -509,46 +618,23 @@ async function computeQualifiersTop2(tId) {
  *  - randomSeed: opcjonalne ziarno (string/number) dla powtarzalności losowania
  *  - overwrite/skipLocked/fromRound – jak wcześniej
  */
+// CHANGED: seedKnockout — respektuje ustawienia turnieju
 export async function seedKnockout(tournamentId, opts = {}) {
   const {
     overwrite = false,
     skipLocked = true,
-    fromRound = null,
-    // NOWE:
-    mode = 'preset',          // 'preset' (A1–H2…) albo 'random'
-    avoidSameGroup = true,    // staraj się unikać par z tej samej grupy
-    randomSeed = null         // opcjonalny seed
+    fromRound = null
   } = opts;
 
   const tId = parseInt(tournamentId, 10);
-
-  // standings z grup
-  const groups = await getGroupStandings(tId);
-  if (!groups?.length) throw new Error('Brak danych fazy grupowej');
-
-  // kolejność grup A, B, C...
-  const sorted = [...groups].sort((a, b) => a.group.localeCompare(b.group, 'pl'));
-  const firsts  = sorted.map(g => g.standings?.[0]?.userId).filter(Boolean);
-  const seconds = sorted.map(g => g.standings?.[1]?.userId).filter(Boolean);
-  const entrants = firsts.length + seconds.length;
-
-  // wybór rundy startowej
-  let baseKey = fromRound || (
-    entrants >= 16 ? 'R16'
-    : entrants === 8 ? 'QF'
-    : entrants === 4 ? 'SF'
-    : 'F'
-  );
+  const {
+    format, koSeedingPolicy, avoidSameGroupInR1, allowByes
+  } = await readTournamentSettings(tId);
 
   const Category = prisma.tournamentCategory || prisma.tournamentcategory;
-  const cat = await Category.findFirst({ where: { tournamentId: tId }, select: { id: true } });
+  const cat = await Category.findFirst({ where: { tournamentId: tId }, select: { id: true }});
   if (!cat) throw new Error('Brak kategorii w turnieju');
 
-  // placeholdery rundy
-  const needed = baseKey === 'R16' ? 8 : baseKey === 'QF' ? 4 : baseKey === 'SF' ? 2 : 1;
-  const baseMatches = await ensureRoundPlaceholders(tId, baseKey, needed, cat.id);
-
-  // kompletne include
   const includeFull = {
     player1: { select: { id: true, name: true, surname: true } },
     player2: { select: { id: true, name: true, surname: true } },
@@ -572,101 +658,227 @@ export async function seedKnockout(tournamentId, opts = {}) {
 
   const changed = [];
 
-  // === 1) WYZNACZ PARY WEDŁUG TRYBU ===
-  let pairs = [];
+  // --- KO_ONLY: parujemy bez grup, z BYE jeśli trzeba ---
+  if (format === 'KO_ONLY') {
+    const Reg = getRegModel();
+    const regs = await Reg.findMany({
+      where: { tournamentId: tId, status: 'accepted' },
+      select: { userId: true },
+    });
+    const entrantsIds = regs.map(r => r.userId);
+    if (entrantsIds.length < 2) throw new Error('Za mało uczestników do KO');
 
-  if (mode === 'preset') {
-    // stary schemat A1-H2, E1-D2, ...
+    const bracketSize = smallestPowerOfTwoGE(entrantsIds.length);
+    if (bracketSize !== 2 && bracketSize !== 4 && bracketSize !== 8 && bracketSize !== 16 && bracketSize !== 32 && bracketSize !== 64 && bracketSize !== 128) {
+      throw new Error('Nieobsługiwany rozmiar drabinki');
+    }
+
+    const baseKey = bracketSize >= 128 ? 'R128'
+                  : bracketSize === 64 ? 'R64'
+                  : bracketSize === 32 ? 'R32'
+                  : bracketSize === 16 ? 'R16'
+                  : bracketSize === 8  ? 'QF'
+                  : bracketSize === 4  ? 'SF'
+                  : 'F';
+
+    const baseMatches = await ensureRoundPlaceholders(tId, baseKey, bracketSize/2, cat.id);
+
+    const ids = shuffleInPlace([...entrantsIds]);
+    while (ids.length < bracketSize) {
+      if (!allowByes) throw new Error(`Brakuje ${bracketSize - ids.length} uczestników, a BYE są wyłączone.`);
+      ids.push(null);
+    }
+
+    // pary idami
+    const pairs = [];
+    for (let i = 0; i < bracketSize; i += 2) {
+      pairs.push([ids[i] || null, ids[i+1] || null]);
+    }
+
+    const tx = [];
+    for (let i = 0; i < baseMatches.length; i++) {
+      tx.push(setPairIfNeeded(baseMatches[i], pairs[i][0], pairs[i][1]));
+    }
+    const updates = await prisma.$transaction(tx.filter(Boolean));
+    changed.push(...updates);
+
+    // auto-advance BYE
+    if (allowByes) {
+      const byeTx = [];
+      for (let i = 0; i < baseMatches.length; i++) {
+        const m = baseMatches[i];
+        const [a,b] = pairs[i];
+        if ((a && !b) || (!a && b)) {
+          const winnerId = a || b;
+          byeTx.push(prisma.match.update({
+            where: { id: m.id },
+            data: { winnerId, status: 'finished', updatedAt: new Date() },
+            include: includeFull,
+          }));
+        }
+      }
+      if (byeTx.length) {
+        const byeUps = await prisma.$transaction(byeTx);
+        changed.push(...byeUps);
+      }
+    }
+
+    // kaskada
+    async function cascade(fromKey, toKey, pairsIdx) {
+      const from = await prisma.match.findMany({
+        where: { tournamentId: tId, ...queryForKey(fromKey) },
+        orderBy: [{ round: 'asc' }, { id: 'asc' }],
+        select: { id:true, winnerId:true, locked:true, player1Id:true, player2Id:true }
+      });
+      const to = await ensureRoundPlaceholders(tId, toKey, toKey==='QF'?4:toKey==='SF'?2:1, cat.id);
+      const tx2 = [];
+      for (let i = 0; i < pairsIdx.length; i++) {
+        const [a, b] = pairsIdx[i]; // 1-indeksowane
+        const w1 = from[a-1]?.winnerId || null;
+        const w2 = from[b-1]?.winnerId || null;
+        if (!w1 || !w2) continue;
+        const target = to[i];
+        if (!target) continue;
+        if (skipLocked && target.locked) continue;
+        const empty = !target.player1Id && !target.player2Id;
+        if (!overwrite && !empty) continue;
+
+        tx2.push(prisma.match.update({
+          where: { id: target.id },
+          data: { player1Id: w1, player2Id: w2, updatedAt: new Date() },
+          include: includeFull,
+        }));
+      }
+      const ups = await prisma.$transaction(tx2);
+      changed.push(...ups);
+    }
+
+    if (baseKey === 'R16') {
+      await cascade('R16', 'QF', [[1,2],[3,4],[5,6],[7,8]]);
+      await cascade('QF',  'SF', [[1,2],[3,4]]);
+      await cascade('SF',  'F',  [[1,2]]);
+    } else if (baseKey === 'R32') {
+      await cascade('R32','R16', [[1,2],[3,4],[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]]);
+      await cascade('R16','QF',  [[1,2],[3,4],[5,6],[7,8]]);
+      await cascade('QF','SF',   [[1,2],[3,4]]);
+      await cascade('SF','F',    [[1,2]]);
+    } else if (baseKey === 'QF') {
+      await cascade('QF','SF', [[1,2],[3,4]]);
+      await cascade('SF','F',  [[1,2]]);
+    } else if (baseKey === 'SF') {
+      await cascade('SF','F', [[1,2]]);
+    }
+
+    return { updated: changed.length, baseRound: canonicalRoundLabelByKey(baseKey, 1).split(' – ')[0] };
+  }
+
+  // --- GROUPS_KO: liczymy standingi i parujemy wg polityki ---
+  const groups = await getGroupStandings(tId);
+  if (!groups?.length) throw new Error('Brak danych fazy grupowej');
+
+  const sorted = [...groups].sort((a, b) => a.group.localeCompare(b.group, 'pl'));
+  const groupLabels = sorted.map(g => g.group); // 'Grupa A', 'Grupa B', ...
+
+  const { winners: firsts, runners: seconds, entrants, qualifiersPerGroup } = await computeQualifiersDynamic(tId);
+
+  // walidacja: liczba awansujących musi być potęgą 2
+  const okSet = new Set([2,4,8,16,32,64,128]);
+  if (!okSet.has(entrants)) {
+    throw new Error(`Liczba awansujących (${entrants}) nie jest potęgą 2. Zmień ustawienia (liczba grup / awansujących).`);
+  }
+
+  const baseKey = entrants >= 128 ? 'R128'
+                : entrants === 64 ? 'R64'
+                : entrants === 32 ? 'R32'
+                : entrants === 16 ? 'R16'
+                : entrants === 8  ? 'QF'
+                : entrants === 4  ? 'SF'
+                : 'F';
+
+  const needed = baseKey === 'R128' ? 64
+               : baseKey === 'R64'  ? 32
+               : baseKey === 'R32'  ? 16
+               : baseKey === 'R16'  ? 8
+               : baseKey === 'QF'   ? 4
+               : baseKey === 'SF'   ? 2
+               : 1;
+
+  const baseMatches = await ensureRoundPlaceholders(tId, baseKey, needed, cat.id);
+
+  // budowa par wg polityki
+  function randomCrossPairs() {
+    // K=2: winner vs runner-up (unikamy tej samej grupy jeśli da się)
+    const W = firsts.map((id, idx) => ({ id, g: idx })).filter(x => x.id);
+    const R = seconds.map((id, idx) => ({ id, g: idx })).filter(x => x.id);
+    shuffleInPlace(W);
+    shuffleInPlace(R);
+
+    const pairs = [];
+    for (const w of W) {
+      let pick = R.findIndex(r => !avoidSameGroupInR1 || r.g !== w.g);
+      if (pick === -1) pick = 0; // nie udało się uniknąć – bierz pierwszy
+      const r = R.splice(pick, 1)[0] || { id: null };
+      pairs.push([w.id, r.id]);
+    }
+    return pairs;
+  }
+
+  function randomPairsSingleList(ids) {
+    const X = shuffleInPlace(ids.filter(Boolean));
+    const pairs = [];
+    for (let i = 0; i < X.length; i += 2) {
+      pairs.push([X[i] || null, X[i+1] || null]);
+    }
+    return pairs;
+  }
+
+  let pairs;
+  if (koSeedingPolicy === 'STRUCTURED' && qualifiersPerGroup >= 2) {
+    // stara logika A1-H2, B1-G2, ... (zależnie od wielkości)
     if (baseKey === 'R16' || baseKey === 'QF') {
-      const [A1,B1,C1,D1,E1,F1,G1,H1] = [0,1,2,3,4,5,6,7].map(i => firsts[i]);
-      const [A2,B2,C2,D2,E2,F2,G2,H2] = [0,1,2,3,4,5,6,7].map(i => seconds[i]);
-
+      const A1=firsts[0], B1=firsts[1], C1=firsts[2], D1=firsts[3], E1=firsts[4], F1=firsts[5], G1=firsts[6], H1=firsts[7];
+      const A2=seconds[0],B2=seconds[1],C2=seconds[2],D2=seconds[3],E2=seconds[4],F2=seconds[5],G2=seconds[6],H2=seconds[7];
       pairs = baseKey === 'R16'
         ? [[A1,H2],[E1,D2],[C1,F2],[G1,B2],[B1,G2],[F1,C2],[D1,E2],[H1,A2]]
         : [[A1,H2],[B1,G2],[C1,F2],[D1,E2]];
     } else if (baseKey === 'SF') {
-      pairs = [[firsts[0], seconds[1]], [firsts[1], seconds[0]]];
-    } else {
-      pairs = [[firsts[0], seconds[0]]];
+      const A1=firsts[0], B1=firsts[1];
+      const A2=seconds[0],B2=seconds[1];
+      pairs = [[A1,B2],[B1,A2]];
+    } else { // F
+      pairs = [[firsts[0] || null, seconds[0] || null]];
     }
   } else {
-    // === mode: 'random' ===
-    const rnd = makeRNG(randomSeed);
-
-    // mapowanie userId -> "Grupa X" (żeby unikać kolizji grupy)
-    const userGroup = new Map();
-    for (let i = 0; i < sorted.length; i++) {
-      const gName = sorted[i].group; // np. "Grupa A"
-      const f = sorted[i].standings?.[0]?.userId;
-      const s = sorted[i].standings?.[1]?.userId;
-      if (f) userGroup.set(f, gName);
-      if (s) userGroup.set(s, gName);
+    // RANDOM_CROSS
+    if (qualifiersPerGroup >= 2) {
+      pairs = randomCrossPairs();
+    } else {
+      // K=1 → losowe pary samych zwycięzców
+      pairs = randomPairsSingleList(firsts);
     }
-
-    // skopiuj & potasuj osobno zwycięzców i drugie miejsca
-    const W = shuffleInPlace([...firsts], rnd);
-    let R = shuffleInPlace([...seconds], rnd);
-
-    // podejdź zachłannie: dla kolejnych W znajdź losowego R z innej grupy
-    const pairsTmp = [];
-    for (let i = 0; i < needed; i++) {
-      const w = W[i];
-      if (w == null) continue;
-
-      let candidates = R.filter(r => r != null);
-      if (avoidSameGroup) {
-        candidates = candidates.filter(r => userGroup.get(r) !== userGroup.get(w));
-      }
-
-      let chosen = null;
-      if (candidates.length) {
-        // wybierz losowego kandydata
-        const idx = Math.floor(rnd() * candidates.length);
-        chosen = candidates[idx];
-      } else {
-        // brak możliwości uniknięcia — weź cokolwiek
-        if (R.length) chosen = R[0];
-      }
-
-      if (chosen == null) break;
-      pairsTmp.push([w, chosen]);
-      // usuń wybranego runnera z puli
-      R = R.filter(x => x !== chosen);
-    }
-
-    // zabezpieczenie: gdyby z jakiegoś powodu par było mniej
-    while (pairsTmp.length < needed && W[pairsTmp.length] != null && R[0] != null) {
-      pairsTmp.push([W[pairsTmp.length], R.shift()]);
-    }
-
-    pairs = pairsTmp;
   }
 
-  // === 2) ZAPISZ PARY DO MECZÓW BAZOWEJ RUNDY ===
+  // wstaw pary w bazową rundę
   const tx = [];
-  for (let i = 0; i < pairs.length; i++) {
-    const [p1, p2] = pairs[i];
+  for (let i = 0; i < needed; i++) {
+    const [p1, p2] = pairs[i] || [null, null];
     tx.push(setPairIfNeeded(baseMatches[i], p1, p2));
   }
   const updates = await prisma.$transaction(tx.filter(Boolean));
   changed.push(...updates);
 
-  // === 3) KASKADA DO NASTĘPNYCH RUND (jak wcześniej) ===
-  async function cascade(fromKey, toKey, idxPairs) {
+  // kaskady bez zmian
+  async function cascade(fromKey, toKey, pairsIdx) {
     const from = await prisma.match.findMany({
       where: { tournamentId: tId, ...queryForKey(fromKey) },
       orderBy: [{ round: 'asc' }, { id: 'asc' }],
       select: { id:true, winnerId:true }
     });
-    const to = await ensureRoundPlaceholders(
-      tId, toKey,
-      toKey==='QF'?4:toKey==='SF'?2:1,
-      cat.id
-    );
+    const to = await ensureRoundPlaceholders(tId, toKey, toKey==='QF'?4:toKey==='SF'?2:1, cat.id);
 
     const tx2 = [];
-    for (let i = 0; i < idxPairs.length; i++) {
-      const [a, b] = idxPairs[i]; // 1-indeksowane
+    for (let i = 0; i < pairsIdx.length; i++) {
+      const [a, b] = pairsIdx[i]; // 1-indeksowane
       const w1 = from[a-1]?.winnerId || null;
       const w2 = from[b-1]?.winnerId || null;
       if (!w1 || !w2) continue;
@@ -691,6 +903,11 @@ export async function seedKnockout(tournamentId, opts = {}) {
     await cascade('R16', 'QF', [[1,2],[3,4],[5,6],[7,8]]);
     await cascade('QF',  'SF', [[1,2],[3,4]]);
     await cascade('SF',  'F',  [[1,2]]);
+  } else if (baseKey === 'R32') {
+    await cascade('R32','R16', [[1,2],[3,4],[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]]);
+    await cascade('R16','QF',  [[1,2],[3,4],[5,6],[7,8]]);
+    await cascade('QF','SF',   [[1,2],[3,4]]);
+    await cascade('SF','F',    [[1,2]]);
   } else if (baseKey === 'QF') {
     await cascade('QF',  'SF', [[1,2],[3,4]]);
     await cascade('SF',  'F',  [[1,2]]);
@@ -698,8 +915,9 @@ export async function seedKnockout(tournamentId, opts = {}) {
     await cascade('SF',  'F',  [[1,2]]);
   }
 
-  return { updated: changed.length, baseRound: canonicalRoundLabelByKey(baseKey, 1).split(' – ')[0], mode };
+  return { updated: changed.length, baseRound: canonicalRoundLabelByKey(baseKey, 1).split(' – ')[0] };
 }
+
 
 
 /* ---------------------------- RESET KO OD RUNDY ---------------------------- */
@@ -719,7 +937,7 @@ export async function resetKnockoutFromRound(tournamentId, fromLabel) {
 
   const all = await prisma.match.findMany({
     where: { tournamentId: tId },
-    select: { id:true, round:true, status:true }
+    select: { id: true, round: true, status: true }
   });
 
   const toClearIds = all
@@ -777,7 +995,7 @@ export async function updateMatchScore(matchId, { status, winnerId, matchSets })
           matchSets: true,
           player1: { select: { id: true, name: true, surname: true } },
           player2: { select: { id: true, name: true, surname: true } },
-          winner:  { select: { id: true, name: true, surname: true } },
+          winner: { select: { id: true, name: true, surname: true } },
         },
       });
 
@@ -845,7 +1063,7 @@ export async function setMatchReferee(matchId, refereeId) {
       player1: { select: { id: true, name: true, surname: true } },
       player2: { select: { id: true, name: true, surname: true } },
       referee: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
+      winner: { select: { id: true, name: true, surname: true } },
       category: true,
       matchSets: { orderBy: { setNumber: 'asc' } },
     },
@@ -864,7 +1082,7 @@ export async function setLocked(matchId, locked) {
       player1: { select: { id: true, name: true, surname: true } },
       player2: { select: { id: true, name: true, surname: true } },
       referee: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
+      winner: { select: { id: true, name: true, surname: true } },
       category: true,
       matchSets: { orderBy: { setNumber: 'asc' } },
     },
@@ -914,7 +1132,9 @@ export async function getEligiblePlayersForMatch(matchId) {
   }
 
   // Pierwsza runda KO → TOP2 z grup
-  const { qualifiers } = await computeQualifiersTop2(tId);
+  const settings = await getTournamentSettings(tId);
+  const { qualifiersPerGroup } = settings;
+  const { qualifiers } = await computeQualifiersTop2(tId, qualifiersPerGroup ?? 2);
   if (!qualifiers.length) return [];
   const users = await prisma.users.findMany({
     where: { id: { in: qualifiers } },
@@ -954,7 +1174,7 @@ export async function setPairing(matchId, { player1Id, player2Id }) {
       player1: { select: { id: true, name: true, surname: true } },
       player2: { select: { id: true, name: true, surname: true } },
       referee: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
+      winner: { select: { id: true, name: true, surname: true } },
       category: true,
       matchSets: { orderBy: { setNumber: 'asc' } },
     },
@@ -977,10 +1197,87 @@ export function normalizeRoundLabel(input) {
   if (s === 'f' || s === 'final' || s.startsWith('finał')) return 'Finał';
   if (s === 'sf' || s.includes('1/2') || s.startsWith('pół')) return 'Półfinał';
   if (s === 'qf' || s.includes('1/4') || s.startsWith('ćwierć')) return 'Ćwierćfinał';
-  if (s === 'r16' || /^1\/8\b/.test(s))  return '1/8 finału';
+  if (s === 'r16' || /^1\/8\b/.test(s)) return '1/8 finału';
   if (s === 'r32' || /^1\/16\b/.test(s)) return '1/16 finału';
   if (s === 'r64' || /^1\/32\b/.test(s)) return '1/32 finału';
-  if (s === 'r128'|| /^1\/64\b/.test(s)) return '1/64 finału';
+  if (s === 'r128' || /^1\/64\b/.test(s)) return '1/64 finału';
 
   return null;
+}
+
+export async function generateKnockoutOnly(tournamentId) {
+  const tId = parseInt(tournamentId, 10);
+
+  // 1) pobierz ustawienia + uczestników zaakceptowanych
+  const t = await prisma.tournament.findUnique({
+    where: { id: tId },
+    select: { allowByes: true }
+  });
+  if (!t) throw new Error('Turniej nie istnieje');
+
+  const Reg = getRegModel();
+  const Category = getCategoryModel();
+
+  const accepted = await Reg.findMany({
+    where: { tournamentId: tId, status: 'accepted' },
+    select: { userId: true }
+  });
+  const entrants = accepted.map(a => a.userId);
+  if (entrants.length < 2) {
+    throw new Error('Za mało uczestników do stworzenia drabinki KO (min. 2).');
+  }
+
+  const cat = await Category.findFirst({
+    where: { tournamentId: tId },
+    select: { id: true }
+  });
+  if (!cat) throw new Error('Brak kategorii w turnieju');
+
+  // 2) wyczyść dotychczasowe mecze
+  await wipeTournamentMatches(tId);
+
+  // 3) ustal rozmiar drabinki i bazową rundę
+  const size = smallestPow2GE(entrants.length);
+  if (size !== entrants.length && !t.allowByes) {
+    throw new Error('Liczba uczestników nie jest potęgą 2 – włącz BYE w ustawieniach lub zmień limit.');
+  }
+  const baseKey = baseKeyForSize(size);
+
+  // 4) przygotuj placeholdery wszystkich potrzebnych rund
+  //    (zaczynamy od bazowej, a potem niższe: QF/SF/F)
+  const chain = chainFrom(baseKey);
+let createdBase = null;
+for (const key of chain) {
+  const cnt = pairsCountForKey(key);
+  const out = await ensureRoundPlaceholders(tId, key, cnt, cat.id);
+  if (!createdBase && key === baseKey) createdBase = out; // zapamiętaj listę bazowej rundy
+}
+
+  // 5) losowo rozstaw 1. rundę (dopaduj BYE = null)
+  const pool = shuffleInPlace([...entrants]);
+while (pool.length < size) pool.push(null);
+
+const includeFull = {
+  player1: { select: { id: true, name: true, surname: true } },
+  player2: { select: { id: true, name: true, surname: true } },
+  referee: { select: { id: true, name: true, surname: true } },
+  winner:  { select: { id: true, name: true, surname: true } },
+  category: true,
+  matchSets: { orderBy: { setNumber: 'asc' } },
+};
+
+const baseCount = pairsCountForKey(baseKey);
+const tx = [];
+for (let i = 0; i < baseCount; i++) {
+  const p1 = pool[2*i]   ?? null;
+  const p2 = pool[2*i+1] ?? null;
+  tx.push(prisma.match.update({
+    where: { id: createdBase[i].id },
+    data: { player1Id: p1, player2Id: p2, status: 'scheduled', updatedAt: new Date() },
+    include: includeFull
+  }));
+}
+const seeded = await prisma.$transaction(tx);
+
+  return { created: seeded.length, baseRound: canonicalRoundLabelByKey(baseKey, 1).split(' – ')[0] };
 }

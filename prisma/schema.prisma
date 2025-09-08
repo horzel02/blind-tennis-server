@@ -15,6 +15,16 @@ enum MatchStage {
   knockout
 }
 
+enum TournamentFormat {
+  GROUPS_KO   // faza grupowa + drabinka KO
+  KO_ONLY     // tylko drabinka KO (bez grup)
+}
+
+enum KOSeedingPolicy {
+  RANDOM_CROSS   // losowy zwycięzca vs losowy drugie miejsce (z unikaniem tej samej grupy)
+  STRUCTURED     // schemat A1–H2, B1–G2 itd.
+}
+
 model roles {
   id                Int          @id @default(autoincrement())
   role_name         String       @unique(map: "role_name") @db.VarChar(50)
@@ -37,14 +47,23 @@ model tournament {
   registration_deadline DateTime?
   participant_limit     Int?
   applicationsOpen      Boolean   @default(true)
-  type                  String    @default("open") @db.VarChar(10) // "open" | "invite"
+  type                  String    @default("open") @db.VarChar(10)
   organizer_id          Int
   organizer             users     @relation(fields: [organizer_id], references: [id])
   created_at            DateTime  @default(now()) @db.Timestamp(0)
   updated_at            DateTime  @default(now()) @db.Timestamp(0)
 
+  // === Ustawienia KO/Grup (NOWE, bez dubli) ===
+  format               TournamentFormat  @default(KO_ONLY)   // zgodne z Twoim isGroupPhase=false
+  groupSize            Int              @default(4)         // 3 lub 4
+  qualifiersPerGroup   Int              @default(2)         // 1 lub 2
+  allowByes            Boolean          @default(true)
+  koSeedingPolicy      KOSeedingPolicy  @default(RANDOM_CROSS)
+  avoidSameGroupInR1   Boolean          @default(true)
+
+  // === To zostaje (masz już) ===
   status            String  @default("registration_open") @db.VarChar(20)
-  isGroupPhase      Boolean @default(false)
+  isGroupPhase      Boolean @default(false)   // legacy toggle — na razie zostawiamy
   isGenderSeparated Boolean @default(false)
   setsToWin         Int     @default(2)
   gamesPerSet       Int     @default(4)
