@@ -84,4 +84,15 @@ router.get('/:tournamentId/matches', matchController.getMatchesByTournamentId);
 router.get('/:id/settings', ensureAuth, tournamentController.getTournamentSettings);
 router.put('/:id/settings', ensureAuth, tournamentController.updateTournamentSettings);
 
+// standings/seed/reset (z matchController)
+router.get('/:tournamentId/group-standings', ensureAuth, matchController.getGroupStandings);
+router.post('/:tournamentId/seed-knockout', ensureAuth, ensureTournyOrg, matchController.seedKnockout);
+router.post('/:tournamentId/reset-knockout', ensureAuth, ensureTournyOrg, matchController.resetKnockoutFromRound);
+
+// KO-only generator (z tournamentController)
+router.post('/:id/generate-ko-only', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutOnly);
+
+router.post('/:tournamentId/reset-groups', ensureAuth, ensureTournyOrg, tournamentController.resetGroupPhase);
+
+
 export default router;

@@ -1,10 +1,10 @@
 // server/controllers/tournamentController.js
 import prisma from '../prismaClient.js';
 import * as tournamentService from '../services/tournamentService.js';
+import * as matchService from '../services/matchService.js'; // ← było brakujące w Twojej wersji
 
 export async function getAll(req, res) {
   try {
-    // zamiast findAll() — wywołaj właściwy serwis:
     const tours = await tournamentService.findAllTournaments();
     res.json(tours);
   } catch (err) {
@@ -27,7 +27,7 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
   try {
-    const tour = await tournamentService.createTournament({...req.body, organizer_id: req.user.id});
+    const tour = await tournamentService.createTournament({ ...req.body, organizer_id: req.user.id });
     res.status(201).json(tour);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -65,11 +65,15 @@ export async function remove(req, res) {
   }
 }
 
-
 export const generateTournamentStructure = async (req, res) => {
+  const io = req.app.get('socketio') || req.app.get('io');
   const { tournamentId } = req.params;
   try {
     const result = await matchService.generateGroupAndKnockoutMatches(tournamentId);
+
+    io?.to(`tournament-${Number(tournamentId)}`).emit('matches-invalidate', { reason: 'generate-groups-ko' });
+    io?.to(`tournament-${Number(tournamentId)}`).emit('standings-invalidate', { reason: 'generate-groups-ko' });
+
     res.status(200).json(result);
   } catch (error) {
     console.error('Błąd generowania meczów:', error);
@@ -82,14 +86,12 @@ export const getTournamentSettings = async (req, res) => {
     const t = await prisma.tournament.findUnique({
       where: { id: Number(req.params.id) },
       select: {
-        // to, z czego korzystamy w generatorach/seedingu:
         format: true,
         groupSize: true,
         qualifiersPerGroup: true,
         allowByes: true,
         koSeedingPolicy: true,
         avoidSameGroupInR1: true,
-        // możesz dorzucić to, co chcesz pokazać w UI:
         applicationsOpen: true,
         participant_limit: true,
       },
@@ -157,5 +159,40 @@ export async function changeRegistrationStatus(req, res) {
     res.json(upd);
   } catch (e) {
     res.status(400).json({ error: e.message });
+  }
+}
+
+export async function generateKnockoutOnly(req, res) {
+  try {
+    const { id } = req.params;
+    const out = await tournamentService.generateKnockoutOnly(id);
+
+    const io = req.app.get('socketio') || req.app.get('io');
+    io?.to(`tournament-${Number(id)}`).emit('matches-invalidate', { reason: 'generate-ko-only' });
+
+    res.json(out);
+  } catch (e) {
+    console.error('generateKnockoutOnly error:', e);
+    res.status(400).json({ error: e.message || 'Błąd generowania KO' });
+  }
+}
+
+export async function resetGroupPhase(req, res) {
+  try {
+    const tid = Number(req.params.tournamentId || req.params.id);
+    if (!Number.isFinite(tid)) {
+      return res.status(400).json({ error: 'Nieprawidłowe ID turnieju' });
+    }
+
+    const { alsoKO } = req.body || {};
+    const out = await tournamentService.resetGroupPhase(tid, { alsoKO: !!alsoKO });
+
+    const io = req.app.get('socketio') || req.app.get('io');
+    io?.to(`tournament-${tid}`).emit('matches-invalidate', { reason: 'reset-groups', ...out });
+    io?.to(`tournament-${tid}`).emit('standings-invalidate', { reason: 'reset-groups' });
+
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Błąd resetu meczów grupowych' });
   }
 }

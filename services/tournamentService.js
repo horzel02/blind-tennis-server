@@ -1,5 +1,6 @@
 // server/services/tournamentService.js
 import prisma from '../prismaClient.js';
+export { generateKnockoutOnly } from './matchService.js';
 
 function parseDate(dateStr) {
   const d = new Date(dateStr);
@@ -8,6 +9,71 @@ function parseDate(dateStr) {
   }
   return d;
 }
+
+// === helpery coercji ===
+function toInt(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function toBool(v, def = undefined) {
+  if (v === undefined) return def;
+  if (v === null) return null;
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return ['true', '1', 'yes', 'on'].includes(v.toLowerCase());
+  if (typeof v === 'number') return v !== 0;
+  return def;
+}
+
+// format z kompatybilnością wsteczną (isGroupPhase)
+function normalizeFormat(format, isGroupPhase) {
+  if (format === 'GROUPS_KO' || format === 'KO_ONLY') return format;
+  if (typeof isGroupPhase === 'boolean') return isGroupPhase ? 'GROUPS_KO' : 'KO_ONLY';
+  return 'GROUPS_KO'; // domyślnie
+}
+
+function validateSettings({ format, groupSize, qualifiersPerGroup, participant_limit, allowByes }) {
+  if (format === 'GROUPS_KO') {
+    if (![3, 4].includes(groupSize ?? 0)) {
+      throw new Error('groupSize musi być 3 albo 4 (dla formatu Grupy+KO).');
+    }
+    if (![1, 2].includes(qualifiersPerGroup ?? 0)) {
+      throw new Error('qualifiersPerGroup musi być 1 albo 2 (dla formatu Grupy+KO).');
+    }
+    if (participant_limit != null) {
+      if (participant_limit <= 0) throw new Error('Limit miejsc musi być dodatni.');
+      if (groupSize && (participant_limit % groupSize !== 0)) {
+        throw new Error('Limit miejsc musi dzielić się przez rozmiar grup (participant_limit % groupSize === 0).');
+      }
+    }
+  }
+  // KO_ONLY – bez dodatkowych wymagań na tym etapie (sprawdzamy przy generatorze)
+}
+
+function isKORoundLabel(round = '') {
+  return /(1\/(64|32|16|8)\s*finału|ćwierćfinał|półfinał|finał)/i.test(round || '');
+}
+
+async function getMatchStatsForTournament(tournamentId) {
+  const tId = Number(tournamentId);
+  const matches = await prisma.match.findMany({
+    where: { tournamentId: tId },
+    select: { id: true, round: true }
+  });
+  const total = matches.length;
+  let groupCount = 0;
+  let koCount = 0;
+  for (const m of matches) {
+    if (isKORoundLabel(m.round)) koCount++;
+    else groupCount++;
+  }
+  return { total, groupCount, koCount };
+}
+
+
+/* ========================================================================== */
+/*                               CRUD turnieju                                */
+/* ========================================================================== */
 
 export function createTournament({
   name,
@@ -19,24 +85,44 @@ export function createTournament({
   start_date,
   end_date,
   registration_deadline,
-  participant_limit,
+  participant_limit,   // jedyny limit
   applicationsOpen,
+
+  // nowe/rozbudowane
+  format,
+  groupSize,
+  qualifiersPerGroup,
+  allowByes,
+  koSeedingPolicy,
+  avoidSameGroupInR1,
+
+  // legacy + scoring
   isGroupPhase,
   setsToWin,
   gamesPerSet,
   tieBreakType,
   organizer_id,
   categories,
-
-  // NEW — opcjonalne, używamy jeśli przyszły (w DB masz defaulty)
-  format,
-  groupSize,
-  qualifiersPerGroup,
-  allowByes,
-  koSeedingPolicy,
-  avoidSameGroupInR1
 }) {
-  const categoriesToCreate = categories.map(cat => ({
+  const fmt   = normalizeFormat(format, isGroupPhase);
+  const limit = toInt(participant_limit);
+
+  const gs  = groupSize != null ? toInt(groupSize) : null;            // KO_ONLY → może być null
+  const qpg = qualifiersPerGroup != null ? toInt(qualifiersPerGroup) : null;
+
+  const byes  = toBool(allowByes, true);
+  const avoid = toBool(avoidSameGroupInR1, true);
+
+  // Walidacja ustawień (dla GROUPS_KO sprawdzamy groupSize/qualifiers itp.)
+  validateSettings({
+    format: fmt,
+    groupSize: gs,
+    qualifiersPerGroup: qpg,
+    participant_limit: limit,
+    allowByes: byes,
+  });
+
+  const categoriesToCreate = (categories || []).map(cat => ({
     categoryName: cat.category,
     gender: cat.gender,
   }));
@@ -52,32 +138,32 @@ export function createTournament({
       start_date: parseDate(start_date),
       end_date: parseDate(end_date),
       registration_deadline: registration_deadline ? parseDate(registration_deadline) : null,
-      participant_limit: participant_limit ? Number(participant_limit) : null,
-      applicationsOpen,
+
+      participant_limit: limit,
+      applicationsOpen: toBool(applicationsOpen, true),
+
+      // nowe ustawienia (bez nulli do kolumn nienullowalnych)
+      format: fmt,
+      ...(gs  !== null && gs  !== undefined ? { groupSize: gs } : {}),
+      ...(qpg !== null && qpg !== undefined ? { qualifiersPerGroup: qpg } : {}),
+      allowByes: byes,
+      koSeedingPolicy: koSeedingPolicy || 'RANDOM_CROSS',
+      avoidSameGroupInR1: avoid,
+
+      // legacy + scoring
       organizer_id,
-      isGroupPhase,
-      setsToWin,
-      gamesPerSet,
-      tieBreakType,
+      isGroupPhase: fmt === 'GROUPS_KO',                      // zgodność wsteczna
+      setsToWin:   toInt(setsToWin)   ?? 2,
+      gamesPerSet: toInt(gamesPerSet) ?? 4,
+      tieBreakType: tieBreakType || 'super',
 
-      // NEW: tylko jeśli podane (w przeciwnym razie zadziałają defaulty z DB)
-      ...(format               ? { format } : {}),
-      ...(groupSize            ? { groupSize: Number(groupSize) } : {}),
-      ...(qualifiersPerGroup   ? { qualifiersPerGroup: Number(qualifiersPerGroup) } : {}),
-      ...(typeof allowByes === 'boolean' ? { allowByes } : {}),
-      ...(koSeedingPolicy      ? { koSeedingPolicy } : {}),
-      ...(typeof avoidSameGroupInR1 === 'boolean' ? { avoidSameGroupInR1 } : {}),
-
-      categories: {
-        create: categoriesToCreate,
-      },
-      tournamentUserRoles: {
-        create: { userId: organizer_id, role: 'organizer' }
-      }
+      categories: { create: categoriesToCreate },
+      tournamentUserRoles: { create: { userId: organizer_id, role: 'organizer' } },
     },
     include: { categories: true },
   });
 }
+
 
 export function updateTournament(
   id,
@@ -91,63 +177,133 @@ export function updateTournament(
     start_date,
     end_date,
     registration_deadline,
-    participant_limit,
+    participant_limit,   // tylko to
     applicationsOpen,
-    isGroupPhase,
-    setsToWin,
-    gamesPerSet,
-    tieBreakType,
-    categories,
 
-    // NEW
+    // NOWE
     format,
     groupSize,
     qualifiersPerGroup,
     allowByes,
     koSeedingPolicy,
-    avoidSameGroupInR1
+    avoidSameGroupInR1,
+
+    // istniejące
+    isGroupPhase,
+    setsToWin,
+    gamesPerSet,
+    tieBreakType,
+    categories,
   }
 ) {
-  return prisma.tournament.update({
+  return prisma.tournament.findUnique({
     where: { id: Number(id) },
-    data: {
+    select: {
+      format: true,
+      groupSize: true,
+      qualifiersPerGroup: true,
+      participant_limit: true,
+      allowByes: true,
+      isGroupPhase: true,
+    },
+  }).then(async current => {
+    if (!current) throw new Error('Turniej nie istnieje');
+
+    // >>> NOWE: policz stan meczów
+    const stats = await getMatchStatsForTournament(id);
+
+    // >>> Blokady:
+    // 1) format – nie zmieniamy, gdy są jakiekolwiek mecze
+    if (format !== undefined) {
+      const targetFmt = normalizeFormat(format, isGroupPhase);
+      const currentFmt = normalizeFormat(current.format, current.isGroupPhase);
+      if (targetFmt !== currentFmt && stats.total > 0) {
+        throw new Error('Nie można zmieniać formatu, gdy turniej ma już wygenerowane mecze.');
+      }
+    }
+
+    // 2) groupSize / qualifiersPerGroup – nie zmieniamy, gdy istnieją mecze grupowe
+    if (stats.groupCount > 0) {
+      if (groupSize !== undefined) {
+        throw new Error('Nie można zmienić rozmiaru grup, gdy istnieją mecze grupowe. Najpierw usuń mecze grupowe.');
+      }
+      if (qualifiersPerGroup !== undefined) {
+        throw new Error('Nie można zmienić liczby awansujących z grup, gdy istnieją mecze grupowe. Najpierw usuń mecze grupowe.');
+      }
+    }
+
+    // 3) allowByes / koSeedingPolicy – opcjonalna blokada, gdy istnieją mecze KO
+    if (stats.koCount > 0) {
+      if (allowByes !== undefined) {
+        throw new Error('Nie można zmienić ustawienia BYE po wygenerowaniu meczów KO. Najpierw zresetuj KO.');
+      }
+      if (koSeedingPolicy !== undefined) {
+        throw new Error('Nie można zmienić polityki rozstawiania po wygenerowaniu meczów KO. Najpierw zresetuj KO.');
+      }
+    }
+
+    // === dalej jak miałeś (obliczenia efektywnych wartości + walidacja)
+    const fmt = (format !== undefined)
+      ? normalizeFormat(format, isGroupPhase)
+      : normalizeFormat(current.format, current.isGroupPhase);
+
+    const gsRaw  = (groupSize          !== undefined) ? toInt(groupSize)          : (current.groupSize ?? null);
+    const qpgRaw = (qualifiersPerGroup !== undefined) ? toInt(qualifiersPerGroup) : (current.qualifiersPerGroup ?? null);
+    const limit  = (participant_limit  !== undefined) ? toInt(participant_limit)  : (toInt(current.participant_limit) ?? null);
+    const byes   = (allowByes          !== undefined) ? toBool(allowByes)         : (current.allowByes ?? true);
+
+    validateSettings({
+      format: fmt,
+      ...(gsRaw  !== undefined && gsRaw  !== null ? { groupSize: gsRaw } : {}),
+      ...(qpgRaw !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
+      participant_limit: limit,
+      ...(byes   !== undefined ? { allowByes: byes } : {}),
+    });
+
+    const data = {
       name,
       description,
       street,
       postalCode,
       city,
       country,
-      start_date: start_date ? parseDate(start_date) : undefined,
-      end_date: end_date ? parseDate(end_date) : undefined,
-      registration_deadline: registration_deadline ? parseDate(registration_deadline) : undefined,
-      participant_limit: typeof participant_limit !== 'undefined'
-        ? (participant_limit === null ? null : Number(participant_limit))
+      start_date: start_date !== undefined ? parseDate(start_date) : undefined,
+      end_date: end_date !== undefined ? parseDate(end_date) : undefined,
+      registration_deadline: registration_deadline !== undefined
+        ? (registration_deadline ? parseDate(registration_deadline) : null)
         : undefined,
-      applicationsOpen,
-      isGroupPhase,
-      setsToWin,
-      gamesPerSet,
-      tieBreakType,
+      applicationsOpen: applicationsOpen !== undefined ? toBool(applicationsOpen) : undefined,
+      participant_limit: participant_limit !== undefined ? limit : undefined,
+      ...(format !== undefined ? { format: fmt, isGroupPhase: fmt === 'GROUPS_KO' } : {}),
+      ...(groupSize !== undefined          && gsRaw  !== null ? { groupSize: gsRaw } : {}),
+      ...(qualifiersPerGroup !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
+      ...(allowByes !== undefined ? { allowByes: byes } : {}),
+      ...(koSeedingPolicy !== undefined ? { koSeedingPolicy } : {}),
+      ...(avoidSameGroupInR1 !== undefined ? { avoidSameGroupInR1: toBool(avoidSameGroupInR1) } : {}),
+      setsToWin:   setsToWin   !== undefined ? toInt(setsToWin)   : undefined,
+      gamesPerSet: gamesPerSet !== undefined ? toInt(gamesPerSet) : undefined,
+      tieBreakType: tieBreakType !== undefined ? tieBreakType : undefined,
+      ...(categories ? {
+        categories: {
+          deleteMany: {},
+          create: categories.map(cat => ({
+            categoryName: cat.category,
+            gender: cat.gender,
+          })),
+        }
+      } : {}),
+      updated_at: new Date(),
+    };
 
-      // NEW — aktualizuj tylko gdy pole przyszło (unikamy nadpisów null/undefined)
-      ...(typeof format !== 'undefined' ? { format } : {}),
-      ...(typeof groupSize !== 'undefined' ? { groupSize: groupSize === null ? null : Number(groupSize) } : {}),
-      ...(typeof qualifiersPerGroup !== 'undefined' ? { qualifiersPerGroup: qualifiersPerGroup === null ? null : Number(qualifiersPerGroup) } : {}),
-      ...(typeof allowByes !== 'undefined' ? { allowByes } : {}),
-      ...(typeof koSeedingPolicy !== 'undefined' ? { koSeedingPolicy } : {}),
-      ...(typeof avoidSameGroupInR1 !== 'undefined' ? { avoidSameGroupInR1 } : {}),
-
-      categories: {
-        deleteMany: {},
-        create: categories.map(cat => ({
-          categoryName: cat.category,
-          gender: cat.gender,
-        })),
-      },
-    },
-    include: { categories: true },
+    return prisma.tournament.update({
+      where: { id: Number(id) },
+      data,
+      include: { categories: true },
+    });
   });
 }
+
+
 
 export function findAllTournaments() {
   return prisma.tournament.findMany({
@@ -163,8 +319,46 @@ export function findTournamentById(id) {
   });
 }
 
-export function deleteTournament(id) {
-  return prisma.tournament.delete({ where: { id: Number(id) } });
+export async function deleteTournament(id) {
+  const tId = Number(id);
+
+  // zbierz ID meczów żeby skasować sety/linki
+  const matchIds = (await prisma.match.findMany({
+    where: { tournamentId: tId }, select: { id: true }
+  })).map(m => m.id);
+
+  const tx = [];
+
+  if (matchIds.length) {
+    if (prisma.matchSet?.deleteMany) {
+      tx.push(prisma.matchSet.deleteMany({ where: { matchId: { in: matchIds } } }));
+    }
+    if (prisma.matchLink?.deleteMany) {
+      tx.push(prisma.matchLink.deleteMany({
+        where: { OR: [{ fromId: { in: matchIds } }, { toId: { in: matchIds } }] }
+      }));
+    }
+  }
+
+  tx.push(prisma.match.deleteMany({ where: { tournamentId: tId } }));
+
+  // role organizator/sędzia
+  const Role = prisma.tournamentUserRole || prisma.tournamentuserrole;
+  if (Role?.deleteMany) tx.push(Role.deleteMany({ where: { tournamentId: tId } }));
+
+  // rejestracje
+  const Reg = prisma.tournamentRegistration || prisma.tournamentregistration;
+  if (Reg?.deleteMany) tx.push(Reg.deleteMany({ where: { tournamentId: tId } }));
+
+  // kategorie
+  const Cat = prisma.tournamentCategory || prisma.tournamentcategory;
+  if (Cat?.deleteMany) tx.push(Cat.deleteMany({ where: { tournamentId: tId } }));
+
+  // na końcu sam turniej
+  tx.push(prisma.tournament.delete({ where: { id: tId } }));
+
+  await prisma.$transaction(tx);
+  return { deleted: true };
 }
 
 export function findTournamentsByOrganizer(userId) {
@@ -180,20 +374,22 @@ export function findTournamentsByOrganizer(userId) {
   });
 }
 
+/* ========================================================================== */
+/*                         Ustawienia turnieju (Settings)                     */
+/* ========================================================================== */
+
 export async function getTournamentSettings(tournamentId) {
   const id = Number(tournamentId);
   const t = await prisma.tournament.findUnique({
     where: { id },
     select: {
       id: true,
-      // nowe ustawienia
       format: true,
       groupSize: true,
       qualifiersPerGroup: true,
       allowByes: true,
       koSeedingPolicy: true,
       avoidSameGroupInR1: true,
-      // pomocnicze
       participant_limit: true,
       applicationsOpen: true,
       isGroupPhase: true,
@@ -213,6 +409,7 @@ export async function updateTournamentSettings(tournamentId, payload) {
   if (payload.format != null) {
     if (!allowedFormat.has(payload.format)) throw new Error('Nieprawidłowy format');
     data.format = payload.format;
+    data.isGroupPhase = payload.format === 'GROUPS_KO'; // zgodność wsteczna
   }
   if (payload.groupSize != null) {
     const gs = Number(payload.groupSize);
@@ -258,6 +455,9 @@ export async function updateTournamentSettings(tournamentId, payload) {
   return updated;
 }
 
+/* ========================================================================== */
+/*                    Rejestracje + blokada na limicie miejsc                 */
+/* ========================================================================== */
 
 async function getTournamentBasic(tournamentId) {
   const t = await prisma.tournament.findUnique({
@@ -302,7 +502,6 @@ async function assertRegistrationOpenAndCapacity(tournamentId) {
   }
 }
 
-// >>> Podmiana istniejącej funkcji rejestracji (jeśli masz inną nazwę – zachowaj swoją)
 export async function registerForTournament(tournamentId, userId) {
   await assertRegistrationOpenAndCapacity(tournamentId);
 
@@ -316,14 +515,13 @@ export async function registerForTournament(tournamentId, userId) {
     data: {
       tournamentId: Number(tournamentId),
       userId: Number(userId),
-      status: 'pending', // albo 'accepted' – jeśli tak masz w logice; limit i tak broni
+      status: 'pending',
       created_at: new Date(),
       updated_at: new Date(),
     },
   });
 }
 
-// >>> Podmiana istniejącej funkcji zmiany statusu
 export async function updateRegistrationStatus(registrationId, status) {
   const reg = await prisma.tournamentregistration.findUnique({
     where: { id: Number(registrationId) },
@@ -357,3 +555,35 @@ export async function updateRegistrationStatus(registrationId, status) {
 
   return updated;
 }
+
+export async function resetGroupPhase(tournamentId, { alsoKO = false } = {}) {
+  const tId = Number(tournamentId);
+  if (!Number.isFinite(tId)) throw new Error('Nieprawidłowe ID turnieju');
+
+  const all = await prisma.match.findMany({
+    where: { tournamentId: tId },
+    select: { id: true, round: true }
+  });
+
+  const groupIds = all.filter(m => !isKORoundLabel(m.round)).map(m => m.id);
+  const koIds    = alsoKO ? all.filter(m =>  isKORoundLabel(m.round)).map(m => m.id) : [];
+  const ids = [...groupIds, ...koIds];
+
+  if (ids.length === 0) return { cleared: 0, groups: 0, ko: 0 };
+
+  const tx = [];
+  if (prisma.matchSet?.deleteMany) {
+    tx.push(prisma.matchSet.deleteMany({ where: { matchId: { in: ids } } }));
+  }
+  if (prisma.matchLink?.deleteMany) {
+    tx.push(prisma.matchLink.deleteMany({
+      where: { OR: [{ fromId: { in: ids } }, { toId: { in: ids } }] }
+    }));
+  }
+  tx.push(prisma.match.deleteMany({ where: { id: { in: ids } } }));
+
+  await prisma.$transaction(tx);
+  return { cleared: ids.length, groups: groupIds.length, ko: koIds.length };
+}
+
+

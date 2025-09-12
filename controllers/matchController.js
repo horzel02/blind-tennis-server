@@ -30,7 +30,7 @@ export const getMatchById = async (req, res) => {
 /* ----------------------------------- WYNIK ----------------------------------- */
 
 export const updateMatchScore = async (req, res) => {
-  const io = req.app.get('socketio');
+  const io = req.app.get('socketio') || req.app.get('io');
   const { matchId } = req.params;
   const { status, winnerId, matchSets } = req.body;
 
@@ -43,8 +43,14 @@ export const updateMatchScore = async (req, res) => {
       status: updatedMatch.status,
     });
 
-    io?.to(`tournament-${updatedMatch.tournamentId}`)
-      .emit('matches-invalidate', { reason: 'cascade' });
+    io?.to(`tournament-${updatedMatch.tournamentId}`).emit('matches-invalidate', { reason: 'cascade' });
+
+    // jeśli to runda grupowa → odśwież także tabelę
+    const r = (updatedMatch.round || '').toLowerCase();
+    const isKO = /(1\/(8|16|32|64)|ćwierćfina|półfina|finał)/i.test(r);
+    if (!isKO) {
+      io?.to(`tournament-${updatedMatch.tournamentId}`).emit('standings-invalidate', { reason: 'group-score-updated' });
+    }
 
     res.status(200).json(updatedMatch);
   } catch (error) {
@@ -57,7 +63,7 @@ export const updateMatchScore = async (req, res) => {
 
 export const generateTournamentStructure = async (req, res) => {
   const { tournamentId } = req.params;
-  const io = req.app.get('socketio');
+  const io = req.app.get('socketio') || req.app.get('io');
 
   try {
     const t = await prisma.tournament.findUnique({
@@ -71,6 +77,9 @@ export const generateTournamentStructure = async (req, res) => {
       : await matchService.generateGroupAndKnockoutMatches(tournamentId);
 
     io?.to(`tournament-${Number(tournamentId)}`).emit('matches-invalidate', { reason: 'generate' });
+    if (t.format !== 'KO_ONLY') {
+      io?.to(`tournament-${Number(tournamentId)}`).emit('standings-invalidate', { reason: 'generate' });
+    }
     return res.status(200).json(result);
   } catch (error) {
     console.error('Błąd generowania meczów:', error);
@@ -81,7 +90,7 @@ export const generateTournamentStructure = async (req, res) => {
 /* --------------------------------- SĘDZIOWIE --------------------------------- */
 
 export const setMatchReferee = async (req, res) => {
-  const io = req.app.get('socketio');
+  const io = req.app.get('socketio') || req.app.get('io');
   const { matchId } = req.params;
   const { refereeId } = req.body;
 
@@ -122,7 +131,7 @@ export const setMatchReferee = async (req, res) => {
 };
 
 export const assignRefereeBulk = async (req, res) => {
-  const io = req.app.get('socketio');
+  const io = req.app.get('socketio') || req.app.get('io');
   const { tournamentId, matchIds, refereeId } = req.body;
 
   try {
@@ -182,6 +191,9 @@ export const assignRefereeBulk = async (req, res) => {
       io?.to(`match-${m.id}`).emit('match-referee-changed', payload);
     }
 
+    // po bulku też warto dać pełny refresh listy
+    io?.to(`tournament-${tId}`).emit('matches-invalidate', { reason: 'referee-bulk' });
+
     res.json({ updated: updatedMatches.length, skipped });
   } catch (e) {
     console.error('assignRefereeBulk error:', e);
@@ -204,10 +216,10 @@ export const getGroupStandings = async (req, res) => {
 // SEED KO z grup (top2), wspiera opcje w body: { overwrite, skipLocked, fromRound }
 export const seedKnockout = async (req, res) => {
   try {
-    const io = req.app.get('socketio');
+    const io = (req.app.get('socketio') || req.app.get('io'));
     const out = await matchService.seedKnockout(req.params.tournamentId, req.body || {});
 
-    // doślij świeże mecze z tej rundy, żeby FE się odświeżył
+    // doślij świeże mecze tej rundy, żeby FE się odświeżył
     const matches = await prisma.match.findMany({
       where: {
         tournamentId: Number(req.params.tournamentId),
@@ -236,11 +248,9 @@ export const seedKnockout = async (req, res) => {
   }
 };
 
-
-// Reset KO od wskazanej rundy (nowy + legacy alias)
-// === DODAJ: reset KO od podanej rundy ===
+// Reset KO od wskazanej rundy
 export const resetKnockoutFromRound = async (req, res) => {
-  const io = req.app.get('socketio');
+  const io = req.app.get('socketio') || req.app.get('io');
   try {
     const { from } = req.body || {};
     const out = await matchService.resetKnockoutFromRound(req.params.tournamentId, from);
@@ -253,19 +263,18 @@ export const resetKnockoutFromRound = async (req, res) => {
   }
 };
 
-
-
-
 /* ------------------------------- PAIRING/LOCK ------------------------------- */
 
 export const setPairing = async (req, res) => {
   try {
     const { player1Id = null, player2Id = null } = req.body || {};
-    const io = req.app.get('socketio');
+    const io = req.app.get('socketio') || req.app.get('io');
     const updated = await matchService.setPairing(req.params.matchId, { player1Id, player2Id });
 
     io?.to(`match-${updated.id}`).emit('match-updated', updated);
     io?.to(`tournament-${updated.tournamentId}`).emit('match-updated', updated);
+    // oraz pełny refresh list
+    io?.to(`tournament-${updated.tournamentId}`).emit('matches-invalidate', { reason: 'pairing' });
     res.json(updated);
   } catch (e) {
     console.error('setPairing error:', e);
@@ -276,11 +285,12 @@ export const setPairing = async (req, res) => {
 export const setLocked = async (req, res) => {
   try {
     const { locked = true } = req.body || {};
-    const io = req.app.get('socketio');
+    const io = req.app.get('socketio') || req.app.get('io');
     const updated = await matchService.setLocked(req.params.matchId, !!locked);
 
     io?.to(`match-${updated.id}`).emit('match-updated', updated);
     io?.to(`tournament-${updated.tournamentId}`).emit('match-updated', updated);
+    io?.to(`tournament-${updated.tournamentId}`).emit('matches-invalidate', { reason: 'lock' });
     res.json(updated);
   } catch (e) {
     console.error('setLocked error:', e);
