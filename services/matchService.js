@@ -256,6 +256,55 @@ export async function getMatchById(matchId) {
  *  GENERATOR: GRUPY + BAZOWE KO (szkielet)
  * ============================================================================ */
 
+export async function generateKnockoutSkeleton(tournamentId) {
+  const tId = parseInt(tournamentId, 10);
+
+  // ustawienia + zaakceptowani
+  const t = await prisma.tournament.findUnique({
+    where: { id: tId },
+    select: { allowByes: true }
+  });
+  if (!t) throw new Error('Turniej nie istnieje');
+
+  const Reg = getRegModel();
+  const Category = getCategoryModel();
+
+  const accepted = await Reg.findMany({
+    where: { tournamentId: tId, status: 'accepted' },
+    select: { userId: true }
+  });
+  const entrants = accepted.map(a => a.userId);
+  if (entrants.length < 2) {
+    throw new Error('Za mało uczestników do stworzenia drabinki KO (min. 2).');
+  }
+
+  const cat = await Category.findFirst({
+    where: { tournamentId: tId },
+    select: { id: true }
+  });
+  if (!cat) throw new Error('Brak kategorii w turnieju');
+
+  // wyczyść dotychczasowe mecze
+  await wipeTournamentMatches(tId);
+
+  // rozmiar drabinki + bazowa runda
+  const size = smallestPow2GE(entrants.length);
+  if (size !== entrants.length && !t.allowByes) {
+    throw new Error('Liczba uczestników nie jest potęgą 2 – włącz BYE w ustawieniach lub zmień limit.');
+  }
+  const baseKey = baseKeyForSize(size);
+
+  // placeholdery wszystkich potrzebnych rund (od bazowej do finału) – BEZ par
+  const chain = chainFrom(baseKey);
+  for (const key of chain) {
+    const cnt = pairsCountForKey(key);
+    await ensureRoundPlaceholders(tId, key, cnt, cat.id);
+  }
+
+  return { created: pairsCountForKey(baseKey), baseRound: canonicalRoundLabelByKey(baseKey, 1).split(' – ')[0] };
+}
+
+
 export async function generateGroupAndKnockoutMatches(tournamentId) {
   const tId = parseInt(tournamentId, 10);
 
@@ -974,7 +1023,9 @@ export async function getEligiblePlayersForMatch(matchId) {
     return regs.map(r => r.user);
   }
 
-  // KO: jeśli to nie pierwsza runda – zwycięzcy poprzedniej
+  // === KO ===
+
+  // 1) Jeśli to nie pierwsza runda – zwycięzcy poprzedniej
   const myIdx = roundRank(r);
   const prevIdx = myIdx + 1;
   const prevLbl = KO_ROUNDS[prevIdx];
@@ -993,55 +1044,117 @@ export async function getEligiblePlayersForMatch(matchId) {
     }
   }
 
-  // Pierwsza runda KO → TOP K z grup
+  // 2) Pierwsza runda KO → TOP K z grup (winners + runners)
   const { qualifiersPerGroup } = await readTournamentSettings(tId);
   const { winners, runners } = await computeQualifiersDynamic(tId);
   const qualifiers = qualifiersPerGroup >= 2 ? [...winners, ...runners] : [...winners];
 
-  if (!qualifiers.length) return [];
-  const users = await prisma.users.findMany({
-    where: { id: { in: qualifiers } },
-    select: { id: true, name: true, surname: true, email: true },
-  });
-  const map = new Map(users.map(u => [u.id, u]));
-  return qualifiers.map(i => map.get(i)).filter(Boolean);
-}
-
-export async function setPairing(matchId, { player1Id, player2Id }) {
-  const id = parseInt(matchId, 10);
-
-  const m = await prisma.match.findUnique({ where: { id } });
-  if (!m) throw new Error('Mecz nie istnieje');
-  if (m.locked) throw new Error('Mecz zablokowany');
-  if (m.status === 'in_progress' || m.status === 'finished') {
-    throw new Error('Nie można zmienić pary dla meczu, który już trwa lub się zakończył');
+  if (qualifiers.length) {
+    const users = await prisma.users.findMany({
+      where: { id: { in: qualifiers } },
+      select: { id: true, name: true, surname: true, email: true },
+    });
+    const map = new Map(users.map(u => [u.id, u]));
+    const ordered = qualifiers.map(i => map.get(i)).filter(Boolean);
+    if (ordered.length) return ordered;
   }
 
-  const p1 = player1Id == null || player1Id === '' ? null : parseInt(player1Id, 10);
-  const p2 = player2Id == null || player2Id === '' ? null : parseInt(player2Id, 10);
-  if (p1 && p2 && p1 === p2) throw new Error('Ten sam zawodnik po obu stronach');
+  // 3) Fallback dla pustej drabinki: zaakceptowani uczestnicy – ALE bez już użytych w tej rundzie
+  const sameRound = await prisma.match.findMany({
+    where: { tournamentId: tId, round: { startsWith: r } },
+    select: { player1Id: true, player2Id: true },
+  });
+  const used = new Set(
+    sameRound.flatMap(mm => [mm.player1Id, mm.player2Id]).filter(Boolean)
+  );
 
-  // tylko dopuszczeni w KO
-  const myKey = roundToKey(m.round);
-  if (myKey) {
-    const allowed = await getEligiblePlayersForMatch(id);
-    const allowedIds = new Set(allowed.map(u => u.id));
-    if (p1 && !allowedIds.has(p1)) throw new Error('Zawodnik A nie jest dopuszczony do tej rundy');
-    if (p2 && !allowedIds.has(p2)) throw new Error('Zawodnik B nie jest dopuszczony do tej rundy');
+  const Reg = getRegModel();
+  const regs = await Reg.findMany({
+    where: { tournamentId: tId, status: 'accepted' },
+    include: { user: { select: { id: true, name: true, surname: true, email: true } } },
+  });
+
+  return regs
+    .map(r => r.user)
+    .filter(u => u && !used.has(u.id));
+}
+
+function baseRoundName(label = '') {
+  const s = String(label).toLowerCase();
+  if (s.includes('1/64')) return '1/64 finału';
+  if (s.includes('1/32')) return '1/32 finału';
+  if (s.includes('1/16')) return '1/16 finału';
+  if (s.includes('1/8'))  return '1/8 finału';
+  if (s.includes('ćwierćfina')) return 'Ćwierćfinał';
+  if (s.includes('półfina'))    return 'Półfinał';
+  if (s.includes('finał'))      return 'Finał';
+  return null;
+}
+
+
+export async function setPairing(matchId, { player1Id, player2Id }) {
+  const id = Number(matchId);
+  const match = await prisma.match.findUnique({
+    where: { id },
+    include: { player1: true, player2: true },
+  });
+  if (!match) throw new Error('Mecz nie istnieje');
+
+  // Pozwól na częściowe aktualizacje:
+  // jeśli pole nie przyszło, zostaw dotychczasową wartość (nie NULL!)
+  const nextP1 = (player1Id === undefined) ? match.player1Id : player1Id;
+  const nextP2 = (player2Id === undefined) ? match.player2Id : player2Id;
+
+  // Walidacja dopuszczenia do rundy – gracz jest OK, jeśli:
+  // - jest w puli eligible LUB
+  // - był już przypisany do TEGO meczu (żeby ponowny zapis bez zmian nie failował)
+  const eligible = await getEligiblePlayersForMatch(id);
+  const eligibleIds = new Set(eligible.map(u => u.id));
+
+  const isAllowedHere = (pid) =>
+    pid == null ||
+    eligibleIds.has(pid) ||
+    pid === match.player1Id ||
+    pid === match.player2Id;
+
+  if (!isAllowedHere(nextP1) || !isAllowedHere(nextP2)) {
+    throw new Error('Zawodnik nie jest dopuszczony do tej rundy');
+  }
+
+  // Unikalność w rundzie – ALE z wyłączeniem bieżącego meczu
+  const base = baseRoundName(match.round || '') || '';
+  if (nextP1 || nextP2) {
+    const conflict = await prisma.match.findFirst({
+      where: {
+        tournamentId: match.tournamentId,
+        id: { not: id },
+        round: { startsWith: base },
+        OR: [
+          nextP1 ? { OR: [{ player1Id: nextP1 }, { player2Id: nextP1 }] } : undefined,
+          nextP2 ? { OR: [{ player1Id: nextP2 }, { player2Id: nextP2 }] } : undefined,
+        ].filter(Boolean),
+      },
+      select: { id: true },
+    });
+    if (conflict) {
+      throw new Error('Ten zawodnik jest już w innym meczu tej rundy');
+    }
   }
 
   const updated = await prisma.match.update({
     where: { id },
-    data: { player1Id: p1, player2Id: p2, updatedAt: new Date() },
+    data: {
+      player1Id: nextP1 ?? null,
+      player2Id: nextP2 ?? null,
+    },
     include: {
-      player1: { select: { id: true, name: true, surname: true } },
-      player2: { select: { id: true, name: true, surname: true } },
-      referee: { select: { id: true, name: true, surname: true } },
-      winner:  { select: { id: true, name: true, surname: true } },
-      category: true,
-      matchSets: { orderBy: { setNumber: 'asc' } },
+      player1: true, player2: true, referee: true, category: true,
+      matchSets: true, winner: true
     },
   });
+
+  // (opcjonalnie) wyemituj sockety o aktualizacji
+  // io.to(`tournament-${match.tournamentId}`).emit('match-updated', updated);
 
   return updated;
 }

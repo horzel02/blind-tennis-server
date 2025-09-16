@@ -81,6 +81,23 @@ export const generateTournamentStructure = async (req, res) => {
   }
 };
 
+export async function generateKnockoutSkeleton(req, res) {
+  try {
+    const { id } = req.params;
+    const out = await matchService.generateKnockoutSkeleton(id);
+
+    // socket.io ─ odśwież widoki
+    const io = req.app?.get('socketio'); // u Ciebie tak jest w innych miejscach
+    if (io) io.to(`tournament-${Number(id)}`).emit('matches-invalidate', { reason: 'generate-ko-skeleton' });
+
+    res.json(out);
+  } catch (e) {
+    console.error('generateKnockoutSkeleton error:', e);
+    res.status(400).json({ error: e.message || 'Błąd tworzenia pustej drabinki KO' });
+  }
+}
+
+
 export const getTournamentSettings = async (req, res) => {
   try {
     const t = await prisma.tournament.findUnique({

@@ -2,12 +2,17 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
-export async function createRegistration(tournamentId, userId) {
+export async function createRegistration(
+  tournamentId,
+  userId,
+  regStatus = 'pending',
+  extra = {}
+) {
   return prisma.tournamentregistration.create({
     data: {
       tournamentId,
       userId,
-      status: 'pending',
+      status: regStatus,
     },
   });
 }
@@ -79,10 +84,10 @@ export async function getRegistrationsByTournament(tournamentId) {
   });
 }
 
-export async function updateRegistrationStatus(registrationId, status) {
+export async function updateRegistrationStatus(registrationId, newStatus) {
   return prisma.tournamentregistration.update({
     where: { id: registrationId },
-    data: { status },
+    data: { status: newStatus },
   });
 }
 

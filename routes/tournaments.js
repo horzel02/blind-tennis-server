@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import * as tournamentController from '../controllers/tournamentController.js';
 import * as registrationController from '../controllers/registrationController.js';
-import * as rolesController from '../controllers/rolesController.js';
+import * as rolesController from '../controllers/tournamentUserRoleController.js';
 import * as matchController from '../controllers/matchController.js'; // Dodano
 import { ensureAuth } from '../middlewares/auth.js';
 import prisma from '../prismaClient.js';
@@ -74,7 +74,7 @@ router.post('/:id/participants', ensureAuth, ensureTournyOrg, registrationContro
 // role per-turniej
 router.get('/:id/roles', ensureAuth, ensureTournyOrg, rolesController.listRoles);
 router.post('/:id/roles', ensureAuth, ensureTournyOrg, rolesController.addRole);
-router.delete('/:id/roles/:roleId', ensureAuth, ensureTournyOrg, rolesController.removeRole);
+router.delete('/:id/roles/:role/:userId', ensureAuth, ensureTournyOrg, rolesController.removeRole);
 
 // Mecze
 router.post('/:tournamentId/generate-matches', ensureAuth, ensureTournyOrg, matchController.generateTournamentStructure);
@@ -85,7 +85,7 @@ router.get('/:id/settings', ensureAuth, tournamentController.getTournamentSettin
 router.put('/:id/settings', ensureAuth, tournamentController.updateTournamentSettings);
 
 // standings/seed/reset (z matchController)
-router.get('/:tournamentId/group-standings', ensureAuth, matchController.getGroupStandings);
+router.get('/:tournamentId/group-standings', matchController.getGroupStandings);
 router.post('/:tournamentId/seed-knockout', ensureAuth, ensureTournyOrg, matchController.seedKnockout);
 router.post('/:tournamentId/reset-knockout', ensureAuth, ensureTournyOrg, matchController.resetKnockoutFromRound);
 
@@ -94,5 +94,6 @@ router.post('/:id/generate-ko-only', ensureAuth, ensureTournyOrg, tournamentCont
 
 router.post('/:tournamentId/reset-groups', ensureAuth, ensureTournyOrg, tournamentController.resetGroupPhase);
 
+router.post('/:id/generate-ko-skeleton', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutSkeleton);
 
 export default router;

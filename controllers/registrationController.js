@@ -38,13 +38,9 @@ export async function inviteUser(req, res) {
     const { userId }   = req.body;
     const callerId     = req.user.id;
 
-    // 1) Turniej
     const tour = await tournamentService.findTournamentById(tournamentId);
-    if (!tour) {
-      return res.status(404).json({ error: 'Turniej nie istnieje' });
-    }
+    if (!tour) return res.status(404).json({ error: 'Turniej nie istnieje' });
 
-    // 2) Uprawnienia: oryginalny creator LUB invited organizer
     const isCreator = tour.organizer_id === callerId;
     const isInvitedOrg = Boolean(
       await prisma.tournamentuserrole.findFirst({
@@ -55,19 +51,22 @@ export async function inviteUser(req, res) {
       return res.status(403).json({ error: 'Brak uprawnień (tylko organizator)' });
     }
 
-    // 3) Czy już jest zgłoszenie?
     const existing = await registrationService.findByTournamentAndUser(tournamentId, userId);
     if (existing) {
       if (existing.status === 'rejected') {
-        // przywracamy zaproszenie
         const updated = await registrationService.updateRegistrationStatus(existing.id, 'invited');
         return res.json(updated);
       }
       return res.status(400).json({ error: 'Ten gracz już jest zgłoszony' });
     }
 
-    // 4) Tworzymy zaproszenie
-    const reg = await registrationService.createRegistration(tournamentId, userId, 'invited');
+    // KLUCZ: status = 'invited'
+    const reg = await registrationService.createRegistration(
+      tournamentId,
+      userId,
+      'invited',
+      { invitedBy: callerId } // opcjonalnie, jeśli masz kolumnę
+    );
     return res.status(201).json(reg);
 
   } catch (err) {
