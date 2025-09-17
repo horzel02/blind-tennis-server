@@ -31,31 +31,169 @@ export const getMatchById = async (req, res) => {
 
 export const updateMatchScore = async (req, res) => {
   const io = req.app.get('socketio') || req.app.get('io');
-  const { matchId } = req.params;
-  const { status, winnerId, matchSets } = req.body;
+  const matchId = Number(req.params.matchId);
 
   try {
-    const updatedMatch = await matchService.updateMatchScore(matchId, { status, winnerId, matchSets });
-
-    io?.to(`match-${updatedMatch.id}`).emit('match-updated', updatedMatch);
-    io?.to(`tournament-${updatedMatch.tournamentId}`).emit('match-status-changed', {
-      matchId: updatedMatch.id,
-      status: updatedMatch.status,
+    // meta
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { tournament: true, player1: true, player2: true },
     });
-
-    io?.to(`tournament-${updatedMatch.tournamentId}`).emit('matches-invalidate', { reason: 'cascade' });
-
-    // jeśli to runda grupowa → odśwież także tabelę
-    const r = (updatedMatch.round || '').toLowerCase();
-    const isKO = /(1\/(8|16|32|64)|ćwierćfina|półfina|finał)/i.test(r);
-    if (!isKO) {
-      io?.to(`tournament-${updatedMatch.tournamentId}`).emit('standings-invalidate', { reason: 'group-score-updated' });
+    if (!match) return res.status(404).json({ error: 'Mecz nie istnieje' });
+    if (!match.player1Id || !match.player2Id) {
+      return res.status(400).json({ error: 'Brak kompletu zawodników w meczu' });
     }
 
-    res.status(200).json(updatedMatch);
-  } catch (error) {
-    console.error('Błąd aktualizacji wyników meczu:', error);
-    res.status(500).json({ error: error.message || 'Błąd serwera' });
+    // skrót: WO/DQ/RET
+    const incoming = (req.body?.outcome || req.body?.resultType || '').toUpperCase();
+    const outcome =
+      incoming === 'WO' ? 'WALKOVER' :
+      incoming === 'DQ' ? 'DISQUALIFICATION' :
+      incoming === 'RET' ? 'RETIREMENT' :
+      ['WALKOVER','DISQUALIFICATION','RETIREMENT','NORMAL'].includes(incoming) ? incoming : undefined;
+
+    if (outcome && outcome !== 'NORMAL') {
+      const winnerId = Number(req.body?.winnerId);
+      if (![match.player1Id, match.player2Id].includes(winnerId)) {
+        return res.status(400).json({ error: 'winnerId musi być jednym z zawodników meczu' });
+      }
+
+      // zapis wyniku (bez setów) + awans
+      const updated = await matchService.updateMatchScore(matchId, {
+        status: 'finished',
+        winnerId,
+        matchSets: [],
+      });
+
+      // typ rozstrzygnięcia
+      const final = await prisma.match.update({
+        where: { id: matchId },
+        data: { resultType: outcome, resultNote: req.body?.note ?? null, updatedAt: new Date() },
+        include: {
+          matchSets: { orderBy: { setNumber: 'asc' } },
+          player1: true, player2: true, winner: true, tournament: true,
+        },
+      });
+
+      // emit
+      io?.to(`match-${final.id}`).emit('match-updated', final);
+      io?.to(`tournament-${final.tournamentId}`).emit('match-status-changed', { matchId: final.id, status: final.status });
+      io?.to(`tournament-${final.tournamentId}`).emit('matches-invalidate', { reason: 'cascade' });
+
+      // jeśli to nie KO → odśwież tabele grupowe
+      const r = (final.round || '').toLowerCase();
+      const isKO = /(1\/(8|16|32|64)|ćwierćfina|półfina|finał)/i.test(r);
+      if (!isKO) io?.to(`tournament-${final.tournamentId}`).emit('standings-invalidate', { reason: 'group-score-updated' });
+
+      return res.json(final);
+    }
+
+    // zwykła ścieżka: sety
+    const raw = Array.isArray(req.body?.sets) ? req.body.sets : req.body?.matchSets;
+    if (!Array.isArray(raw) || !raw.length) {
+      return res.status(400).json({ error: 'Brak danych setów (sets/matchSets)' });
+    }
+
+    const setsToWin   = match.tournament?.setsToWin   ?? 2;
+    const gamesToWin  = match.tournament?.gamesPerSet ?? 6;
+    const tieBreak    = (match.tournament?.tieBreakType || 'normal').toLowerCase();
+    const maxSets     = setsToWin * 2 - 1;
+    const SUPER_TB    = 10;
+
+    const sets = raw.map((s, i) => {
+      const p1 = Number(s.p1 ?? s.player1 ?? s.player1Score ?? s.player1Games);
+      const p2 = Number(s.p2 ?? s.player2 ?? s.player2Score ?? s.player2Games);
+      if (!Number.isInteger(p1) || !Number.isInteger(p2) || p1 < 0 || p2 < 0) {
+        throw new Error(`Nieprawidłowe wartości gemów w secie #${i+1}`);
+      }
+      return { p1, p2 };
+    });
+    if (sets.length > maxSets) {
+      return res.status(400).json({ error: `Za dużo setów. Maksymalnie ${maxSets}.` });
+    }
+
+    let p1Sets = 0, p2Sets = 0;
+    for (let i = 0; i < sets.length; i++) {
+      const { p1, p2 } = sets[i];
+      if (p1 === p2) return res.status(400).json({ error: `Remis w secie #${i+1} jest niedozwolony` });
+
+      // czy to decider z super TB?
+      const isDecider = (tieBreak === 'super_tie_break')
+        && (i === sets.length - 1)
+        && (sets.length === maxSets)
+        && (p1Sets === p2Sets);
+
+      if (isDecider) {
+        const ok = (p1 === SUPER_TB && p2 < SUPER_TB) || (p2 === SUPER_TB && p1 < SUPER_TB);
+        if (!ok) return res.status(400).json({ error: `Set #${i+1}: super tie-break do ${SUPER_TB} (wygrany ma ${SUPER_TB}, przegrany < ${SUPER_TB}).` });
+        if (p1 === SUPER_TB) p1Sets++; else p2Sets++;
+        continue;
+      }
+
+      if (tieBreak === 'no_tie_break') {
+        // min. N i przewaga >= 2 (może być 7:5, 23:21, itd.)
+        const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
+        const ok = (mx >= gamesToWin) && ((mx - mn) >= 2);
+        if (!ok) return res.status(400).json({ error: `Set #${i+1}: bez TB potrzebna przewaga 2 po osiągnięciu ${gamesToWin}.` });
+        if (p1 > p2) p1Sets++; else p2Sets++;
+        continue;
+      }
+
+      // "normal": N:x lub (N+1):N gdy było N:N
+      const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
+      const okNormal =
+        (mx === gamesToWin && mn < gamesToWin)   // standardowe domknięcie
+        || (mx === gamesToWin + 1 && mn === gamesToWin); // tie-break 1-punktowy po N:N
+      if (!okNormal) {
+        return res.status(400).json({ error: `Set #${i+1}: zwykły TB → ${gamesToWin}:x albo ${gamesToWin+1}:${gamesToWin}.` });
+      }
+      if (p1 > p2) p1Sets++; else p2Sets++;
+
+      if (p1Sets > setsToWin || p2Sets > setsToWin) {
+        return res.status(400).json({ error: `Za dużo setów — ktoś już osiągnął ${setsToWin}.` });
+      }
+    }
+
+    if (p1Sets < setsToWin && p2Sets < setsToWin) {
+      return res.status(400).json({ error: `Wynik nie rozstrzyga meczu. Potrzebne ${setsToWin} wygrane sety.` });
+    }
+    const winnerId = (p1Sets === setsToWin) ? match.player1Id : match.player2Id;
+
+    const matchSets = sets.map((s, idx) => ({
+      setNumber: idx + 1,
+      player1Score: s.p1,
+      player2Score: s.p2,
+    }));
+
+    const updated = await matchService.updateMatchScore(matchId, {
+      status: 'finished',
+      winnerId,
+      matchSets,
+    });
+
+    // resultType = NORMAL
+    const final = await prisma.match.update({
+      where: { id: matchId },
+      data: { resultType: 'NORMAL', resultNote: null, updatedAt: new Date() },
+      include: {
+        matchSets: { orderBy: { setNumber: 'asc' } },
+        player1: true, player2: true, winner: true, tournament: true,
+      },
+    });
+
+    // emit
+    io?.to(`match-${final.id}`).emit('match-updated', final);
+    io?.to(`tournament-${final.tournamentId}`).emit('match-status-changed', { matchId: final.id, status: final.status });
+    io?.to(`tournament-${final.tournamentId}`).emit('matches-invalidate', { reason: 'cascade' });
+
+    const r = (final.round || '').toLowerCase();
+    const isKO = /(1\/(8|16|32|64)|ćwierćfina|półfina|finał)/i.test(r);
+    if (!isKO) io?.to(`tournament-${final.tournamentId}`).emit('standings-invalidate', { reason: 'group-score-updated' });
+
+    return res.json(final);
+  } catch (e) {
+    console.error('updateMatchScore error:', e);
+    return res.status(400).json({ error: e.message || 'Błąd zapisu wyniku' });
   }
 };
 

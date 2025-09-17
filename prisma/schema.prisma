@@ -25,6 +25,13 @@ enum KOSeedingPolicy {
   STRUCTURED     // schemat A1–H2, B1–G2 itd.
 }
 
+enum MatchResultType {
+  NORMAL           // zwykły mecz na sety
+  WALKOVER         // walkower (WO)
+  DISQUALIFICATION // dyskwalifikacja (DQ)
+  RETIREMENT       // krecz (RET)
+}
+
 model roles {
   id                Int          @id @default(autoincrement())
   role_name         String       @unique(map: "role_name") @db.VarChar(50)
@@ -186,6 +193,8 @@ model Match {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+  resultType   MatchResultType  @default(NORMAL)
+  resultNote   String?          // np. "nie stawił się", "kontuzja" itp.
 
   tournament tournament         @relation(fields: [tournamentId], references: [id])
   category   TournamentCategory @relation(fields: [tournamentCategoryId], references: [id])
