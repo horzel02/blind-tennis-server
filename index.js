@@ -19,6 +19,8 @@ import participantsRouter from './routes/participants.js';
 import tournamentUserRolesRouter from './routes/tournamentUserRoles.js';
 import usersRouter from './routes/users.js';
 import matchRoutes from './routes/matchRoutes.js';
+import matchScheduleRoutes from './routes/matchScheduleRoutes.js';
+import userTimetableRoutes from './routes/userTimetableRoutes.js';
 
 import prisma from './prismaClient.js';
 
@@ -107,6 +109,7 @@ io.use((socket, next) =>
 );
 
 app.set('socketio', io);
+app.set('io', io);
 
 // === ROUTES ===
 app.use('/api/auth', authRoutes);
@@ -116,6 +119,8 @@ app.use('/api/tournaments', participantsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/tournaments/:id/roles', tournamentUserRolesRouter);
 app.use('/api/matches', matchRoutes);
+app.use('/api', matchScheduleRoutes);
+app.use('/api', userTimetableRoutes);
 
 // === SOCKET HANDLERS ===
 io.on('connection', (socket) => {

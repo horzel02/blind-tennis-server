@@ -75,6 +75,8 @@ export async function getRegistrationsByTournament(tournamentId) {
           name: true,
           surname: true,
           email: true,
+          gender: true,
+          preferredCategory: true,
         },
       },
     },
@@ -98,23 +100,23 @@ export async function deleteRegistration(registrationId) {
 }
 
 export const countAcceptedRegistrations = async (tournamentId) => {
-    console.log('DEBUG: W countAcceptedRegistrations');
-    console.log('DEBUG: prisma object:', prisma); // Zobacz, czy prisma jest zainicjowane
-    console.log('DEBUG: prisma.tournamentregistration object:', prisma.tournamentregistration); // Zobacz, czy model istnieje
+  console.log('DEBUG: W countAcceptedRegistrations');
+  console.log('DEBUG: prisma object:', prisma); // Zobacz, czy prisma jest zainicjowane
+  console.log('DEBUG: prisma.tournamentregistration object:', prisma.tournamentregistration); // Zobacz, czy model istnieje
 
-    try {
-        const count = await prisma.tournamentregistration.count({
-            where: {
-                tournamentId: parseInt(tournamentId),
-                status: 'accepted'
-            }
-        });
-        console.log('DEBUG: Count:', count);
-        return count;
-    } catch (error) {
-        console.error('💥 [countAcceptedRegistrations] wyjątek:', error);
-        throw error;
-    }
+  try {
+    const count = await prisma.tournamentregistration.count({
+      where: {
+        tournamentId: parseInt(tournamentId),
+        status: 'accepted'
+      }
+    });
+    console.log('DEBUG: Count:', count);
+    return count;
+  } catch (error) {
+    console.error('💥 [countAcceptedRegistrations] wyjątek:', error);
+    throw error;
+  }
 };
 
 export async function findAllByUser(userId) {

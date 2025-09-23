@@ -56,8 +56,7 @@ router.get('/:id', tournamentController.getById);
 router.get('/:id/registrations/count', registrationController.getAcceptedCount);
 router.get('/:id/registrations/me', ensureAuth, registrationController.getMyRegistration);
 
-// self-registration
-router.post('/:id/registrations', ensureAuth, registrationController.createRegistration);
+router.post('/:id/registrations', ensureAuth, tournamentController.createRegistration);
 
 // panel zgłoszeń (tylko org)
 router.get('/:id/registrations', ensureAuth, ensureTournyOrg, registrationController.getAllRegistrationsForOrganizer);
@@ -93,7 +92,5 @@ router.post('/:tournamentId/reset-knockout', ensureAuth, ensureTournyOrg, matchC
 router.post('/:id/generate-ko-only', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutOnly);
 
 router.post('/:tournamentId/reset-groups', ensureAuth, ensureTournyOrg, tournamentController.resetGroupPhase);
-
-router.post('/:id/generate-ko-skeleton', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutSkeleton);
 
 export default router;

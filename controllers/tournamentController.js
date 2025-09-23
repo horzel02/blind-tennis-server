@@ -81,23 +81,6 @@ export const generateTournamentStructure = async (req, res) => {
   }
 };
 
-export async function generateKnockoutSkeleton(req, res) {
-  try {
-    const { id } = req.params;
-    const out = await matchService.generateKnockoutSkeleton(id);
-
-    // socket.io ─ odśwież widoki
-    const io = req.app?.get('socketio'); // u Ciebie tak jest w innych miejscach
-    if (io) io.to(`tournament-${Number(id)}`).emit('matches-invalidate', { reason: 'generate-ko-skeleton' });
-
-    res.json(out);
-  } catch (e) {
-    console.error('generateKnockoutSkeleton error:', e);
-    res.status(400).json({ error: e.message || 'Błąd tworzenia pustej drabinki KO' });
-  }
-}
-
-
 export const getTournamentSettings = async (req, res) => {
   try {
     const t = await prisma.tournament.findUnique({
@@ -162,11 +145,17 @@ export const updateTournamentSettings = async (req, res) => {
 };
 
 export async function createRegistration(req, res) {
+  const tournamentId = Number(req.params.id);
+  const userId = req.user.id;
+
   try {
-    const reg = await tournamentService.registerForTournament(req.params.id, req.user.id);
-    res.json(reg);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+    const reg = await tournamentService.registerForTournament(tournamentId, userId);
+    return res.json(reg);
+  } catch (err) {
+    return res.status(400).json({
+      code: err.code || 'GENERIC',
+      error: err.message || 'Błąd',
+    });
   }
 }
 
@@ -182,11 +171,10 @@ export async function changeRegistrationStatus(req, res) {
 export async function generateKnockoutOnly(req, res) {
   try {
     const { id } = req.params;
-    const out = await tournamentService.generateKnockoutOnly(id);
-
+    await matchService.generateKnockoutSkeleton(id);
+    const out = await matchService.seedKnockout(id, { overwrite: true });
     const io = req.app.get('socketio') || req.app.get('io');
     io?.to(`tournament-${Number(id)}`).emit('matches-invalidate', { reason: 'generate-ko-only' });
-
     res.json(out);
   } catch (e) {
     console.error('generateKnockoutOnly error:', e);

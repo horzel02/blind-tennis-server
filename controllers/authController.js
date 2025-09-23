@@ -16,8 +16,8 @@ export async function register(req, res) {
 }
 
 export function login(req, res) {
-  const { id, name, surname, email, roles } = req.user;
-  res.json({ id, name, surname, email, roles });
+  const { id, name, surname, email, roles, gender, preferredCategory } = req.user;
+  res.json({ id, name, surname, email, roles, gender, preferredCategory });
 }
 
 export function logout(req, res, next) {
@@ -28,6 +28,6 @@ export function logout(req, res, next) {
 }
 
 export function profile(req, res) {
-  const { id, name, surname, email, roles } = req.user;
-  res.json({ id, name, surname, email, roles });
+  const { id, name, surname, email, roles, gender, preferredCategory } = req.user;
+  res.json({ id, name, surname, email, roles, gender, preferredCategory });
 }

@@ -2,12 +2,26 @@
 import bcrypt from 'bcrypt';
 import prisma from '../prismaClient.js';
 
-export async function registerUser({ name, surname, email, password }) {
+export async function registerUser({ name, surname, email, password, gender, preferredCategory }) {
   const hash = await bcrypt.hash(password, 10);
+
+  // normalizacja i sanity-checki (bardzo lekkie – żadnych twardych blokad)
+  const g = String(gender || '').toLowerCase();
+  const safeGender = ['male', 'female'].includes(g) ? g : null;
+
+  const pc = String(preferredCategory || '').toUpperCase();
+  const safePrefCat = ['B1', 'B2', 'B3', 'OPEN'].includes(pc) ? pc : null;
 
   // 1) utwórz użytkownika
   const user = await prisma.users.create({
-    data: { name, surname, email, password_hash: hash }
+    data: {
+      name,
+      surname,
+      email,
+      password_hash: hash,
+      gender: safeGender,
+      preferredCategory: safePrefCat,
+    }
   });
 
   // 2) pobierz rolę "player"

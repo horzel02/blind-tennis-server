@@ -104,6 +104,8 @@ model users {
   creation_date     DateTime @default(now()) @db.Timestamp(0)
   modification_date DateTime @default(now()) @db.Timestamp(0)
   active            Boolean  @default(true)
+  gender            String?  @db.VarChar(10)
+  preferredCategory String?  @db.VarChar(10)
 
   user_roles              user_roles[]
   tournaments             tournament[]
@@ -178,6 +180,7 @@ model Match {
   status               String    @default("scheduled") @db.VarChar(20)
   courtNumber          String?   @db.VarChar(10)
   matchTime            DateTime?
+  durationMin          Int?
 
   /// NOWE:
   stage           MatchStage @default(group) // group | knockout

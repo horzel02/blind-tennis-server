@@ -1,6 +1,6 @@
 // server/services/tournamentService.js
 import prisma from '../prismaClient.js';
-export { generateKnockoutOnly } from './matchService.js';
+export { generateGroupAndKnockoutMatches, generateKnockoutSkeleton, seedKnockout, resetKnockoutFromRound } from './matchService.js';
 
 function parseDate(dateStr) {
   const d = new Date(dateStr);
@@ -70,6 +70,30 @@ async function getMatchStatsForTournament(tournamentId) {
   return { total, groupCount, koCount };
 }
 
+function normGender(g) {
+  const s = String(g ?? '').trim().toLowerCase();
+  if (!s) return null;
+  if (['m', 'male', 'man', 'men', 'mężczyzna', 'mężczyźni', 'mezczyzna', 'mezczyzni', 'm.'].includes(s)) return 'male';
+  if (['w', 'female', 'woman', 'women', 'kobieta', 'kobiety', 'k', 'f', 'k.'].includes(s)) return 'female';
+  if (['coed', 'mixed', 'mix', 'open'].includes(s)) return 'coed';
+  return null;
+}
+
+async function requiredGenderForTournament(tid) {
+  // 👇 najważniejsze: użyj poprawnego delegata (z fallbackiem)
+  const Cat = prisma.tournamentCategory || prisma.tournamentcategory;
+  const cats = await Cat.findMany({
+    where: { tournamentId: Number(tid) },
+    select: { gender: true },
+  });
+
+  const set = new Set(cats.map(c => normGender(c.gender)).filter(Boolean));
+  if (set.has('coed')) return null;
+
+  const onlySexes = [...set].filter(x => x === 'male' || x === 'female');
+  const uniq = new Set(onlySexes);
+  return (uniq.size === 1) ? [...uniq][0] : null; // 'male' | 'female' | null
+}
 
 /* ========================================================================== */
 /*                               CRUD turnieju                                */
@@ -104,13 +128,13 @@ export function createTournament({
   organizer_id,
   categories,
 }) {
-  const fmt   = normalizeFormat(format, isGroupPhase);
+  const fmt = normalizeFormat(format, isGroupPhase);
   const limit = toInt(participant_limit);
 
-  const gs  = groupSize != null ? toInt(groupSize) : null;            // KO_ONLY → może być null
+  const gs = groupSize != null ? toInt(groupSize) : null;            // KO_ONLY → może być null
   const qpg = qualifiersPerGroup != null ? toInt(qualifiersPerGroup) : null;
 
-  const byes  = toBool(allowByes, true);
+  const byes = toBool(allowByes, true);
   const avoid = toBool(avoidSameGroupInR1, true);
 
   // Walidacja ustawień (dla GROUPS_KO sprawdzamy groupSize/qualifiers itp.)
@@ -144,7 +168,7 @@ export function createTournament({
 
       // nowe ustawienia (bez nulli do kolumn nienullowalnych)
       format: fmt,
-      ...(gs  !== null && gs  !== undefined ? { groupSize: gs } : {}),
+      ...(gs !== null && gs !== undefined ? { groupSize: gs } : {}),
       ...(qpg !== null && qpg !== undefined ? { qualifiersPerGroup: qpg } : {}),
       allowByes: byes,
       koSeedingPolicy: koSeedingPolicy || 'RANDOM_CROSS',
@@ -153,7 +177,7 @@ export function createTournament({
       // legacy + scoring
       organizer_id,
       isGroupPhase: fmt === 'GROUPS_KO',                      // zgodność wsteczna
-      setsToWin:   toInt(setsToWin)   ?? 2,
+      setsToWin: toInt(setsToWin) ?? 2,
       gamesPerSet: toInt(gamesPerSet) ?? 4,
       tieBreakType: tieBreakType || 'super',
 
@@ -247,17 +271,17 @@ export function updateTournament(
       ? normalizeFormat(format, isGroupPhase)
       : normalizeFormat(current.format, current.isGroupPhase);
 
-    const gsRaw  = (groupSize          !== undefined) ? toInt(groupSize)          : (current.groupSize ?? null);
+    const gsRaw = (groupSize !== undefined) ? toInt(groupSize) : (current.groupSize ?? null);
     const qpgRaw = (qualifiersPerGroup !== undefined) ? toInt(qualifiersPerGroup) : (current.qualifiersPerGroup ?? null);
-    const limit  = (participant_limit  !== undefined) ? toInt(participant_limit)  : (toInt(current.participant_limit) ?? null);
-    const byes   = (allowByes          !== undefined) ? toBool(allowByes)         : (current.allowByes ?? true);
+    const limit = (participant_limit !== undefined) ? toInt(participant_limit) : (toInt(current.participant_limit) ?? null);
+    const byes = (allowByes !== undefined) ? toBool(allowByes) : (current.allowByes ?? true);
 
     validateSettings({
       format: fmt,
-      ...(gsRaw  !== undefined && gsRaw  !== null ? { groupSize: gsRaw } : {}),
+      ...(gsRaw !== undefined && gsRaw !== null ? { groupSize: gsRaw } : {}),
       ...(qpgRaw !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
       participant_limit: limit,
-      ...(byes   !== undefined ? { allowByes: byes } : {}),
+      ...(byes !== undefined ? { allowByes: byes } : {}),
     });
 
     const data = {
@@ -275,12 +299,12 @@ export function updateTournament(
       applicationsOpen: applicationsOpen !== undefined ? toBool(applicationsOpen) : undefined,
       participant_limit: participant_limit !== undefined ? limit : undefined,
       ...(format !== undefined ? { format: fmt, isGroupPhase: fmt === 'GROUPS_KO' } : {}),
-      ...(groupSize !== undefined          && gsRaw  !== null ? { groupSize: gsRaw } : {}),
+      ...(groupSize !== undefined && gsRaw !== null ? { groupSize: gsRaw } : {}),
       ...(qualifiersPerGroup !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
       ...(allowByes !== undefined ? { allowByes: byes } : {}),
       ...(koSeedingPolicy !== undefined ? { koSeedingPolicy } : {}),
       ...(avoidSameGroupInR1 !== undefined ? { avoidSameGroupInR1: toBool(avoidSameGroupInR1) } : {}),
-      setsToWin:   setsToWin   !== undefined ? toInt(setsToWin)   : undefined,
+      setsToWin: setsToWin !== undefined ? toInt(setsToWin) : undefined,
       gamesPerSet: gamesPerSet !== undefined ? toInt(gamesPerSet) : undefined,
       tieBreakType: tieBreakType !== undefined ? tieBreakType : undefined,
       ...(categories ? {
@@ -480,44 +504,123 @@ async function countAccepted(tournamentId) {
   return n;
 }
 
-function isAfterDeadline(t) {
-  return t.registration_deadline && new Date() > new Date(t.registration_deadline);
-}
+async function assertRegistrationOpenAndCapacity(tid) {
+  const t = await prisma.tournament.findUnique({
+    where: { id: Number(tid) },
+    select: {
+      applicationsOpen: true,
+      registration_deadline: true,
+      participant_limit: true,
+    },
+  });
+  if (!t) throw new Error('Turniej nie istnieje');
 
-async function assertRegistrationOpenAndCapacity(tournamentId) {
-  const t = await getTournamentBasic(tournamentId);
-  if (!t.applicationsOpen) throw new Error('Rejestracja na turniej jest zamknięta');
-  if (isAfterDeadline(t)) throw new Error('Minął termin rejestracji');
+  // zamknięte zgłoszenia
+  if (!t.applicationsOpen) {
+    throw new Error('Zgłoszenia zamknięte');
+  }
 
-  if (t.participant_limit != null) {
-    const accepted = await countAccepted(tournamentId);
-    if (accepted >= t.participant_limit) {
-      // defensywnie domknij, żeby FE widział aktualny stan
-      await prisma.tournament.update({
-        where: { id: Number(tournamentId) },
-        data: { applicationsOpen: false, updated_at: new Date() },
-      });
-      throw new Error('Osiągnięto limit uczestników');
+  // deadline do końca dnia
+  if (t.registration_deadline) {
+    const end = new Date(t.registration_deadline);
+    end.setHours(23, 59, 59, 999);
+    if (new Date() > end) {
+      throw new Error('Termin rejestracji minął');
+    }
+  }
+
+  // opcjonalnie limit miejsc – liczymy tylko zaakceptowanych
+  if (t.participant_limit && Number.isFinite(t.participant_limit)) {
+    const taken = await prisma.tournamentregistration.count({
+      where: { tournamentId: Number(tid), status: 'accepted' },
+    });
+    if (taken >= t.participant_limit) {
+      throw new Error('Brak miejsc (limit uczestników osiągnięty)');
     }
   }
 }
 
 export async function registerForTournament(tournamentId, userId) {
-  await assertRegistrationOpenAndCapacity(tournamentId);
+  const tid = Number(tournamentId);
+  const uid = Number(userId);
 
-  // sprawdź duplikat
+  await assertRegistrationOpenAndCapacity(tid);
+
+  // duplikat
   const exists = await prisma.tournamentregistration.findFirst({
-    where: { tournamentId: Number(tournamentId), userId: Number(userId) },
+    where: { tournamentId: tid, userId: uid },
   });
   if (exists) throw new Error('Już zgłosiłeś się do tego turnieju');
 
+  // turniej + kategorie (próba #1: z relacji turnieju)
+  const tour = await prisma.tournament.findUnique({
+    where: { id: tid },
+    include: { categories: { select: { gender: true } } }, // <-- UŻYJ include
+  });
+  if (!tour) throw new Error('Turniej nie istnieje');
+
+  // user
+  const user = await prisma.users.findUnique({
+    where: { id: uid },
+    select: { id: true, gender: true },
+  });
+  if (!user) throw new Error('Użytkownik nie istnieje');
+
+  // normalizacja
+  const norm = (g) => {
+    const s = String(g ?? '').trim().toLowerCase();
+    if (!s) return null;
+    if (['m', 'male', 'man', 'men', 'mężczyzna', 'mężczyźni', 'mezczyzna', 'mezczyzni', 'm.'].includes(s)) return 'male';
+    if (['w', 'female', 'woman', 'women', 'kobieta', 'kobiety', 'k', 'f', 'k.'].includes(s)) return 'female';
+    if (['coed', 'mixed', 'mix', 'open'].includes(s)) return 'coed';
+    return null;
+  };
+
+  // policz z tego, co przyszło z include
+  let catGenders = Array.isArray(tour.categories) ? tour.categories.map(c => norm(c.gender)).filter(Boolean) : [];
+
+  // Fallback (#2): jeśli z jakiegoś powodu relacja nie zwróciła kategorii, pobierz wprost
+  if (catGenders.length === 0) {
+    const Cat = prisma.tournamentCategory || prisma.tournamentcategory;
+    const cats = await Cat.findMany({
+      where: { tournamentId: tid },
+      select: { gender: true },
+    });
+    catGenders = cats.map(c => norm(c.gender)).filter(Boolean);
+  }
+
+  const set = new Set(catGenders);
+  const hasCoed = set.has('coed');
+  const onlySexes = [...set].filter(x => x === 'male' || x === 'female');
+  const uniqSex = new Set(onlySexes);
+  const required = hasCoed ? null : (uniqSex.size === 1 ? [...uniqSex][0] : null); // 'male'|'female'|null
+  const requiredLabel = required === 'male' ? 'mężczyzn' : 'kobiet';
+
+  const ug = norm(user.gender);
+
+  // BRAMKA
+  if (required) {
+    if (!ug || ug === 'coed') {
+      const err = new Error(`Ten turniej jest wyłącznie dla ${requiredLabel}. Uzupełnij płeć w profilu.`);
+      err.code = 'GENDER_REQUIRED';
+      throw err;
+    }
+    if (ug !== required) {
+      const err = new Error(`Ten turniej jest wyłącznie dla ${requiredLabel}.`);
+      err.code = 'GENDER_MISMATCH';
+      throw err;
+    }
+  }
+
+  // create + snapshot (ZNORMALIZOWANY)
   return prisma.tournamentregistration.create({
     data: {
-      tournamentId: Number(tournamentId),
-      userId: Number(userId),
+      tournamentId: tid,
+      userId: uid,
       status: 'pending',
-      created_at: new Date(),
-      updated_at: new Date(),
+      gender: ug || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
   });
 }
@@ -566,7 +669,7 @@ export async function resetGroupPhase(tournamentId, { alsoKO = false } = {}) {
   });
 
   const groupIds = all.filter(m => !isKORoundLabel(m.round)).map(m => m.id);
-  const koIds    = alsoKO ? all.filter(m =>  isKORoundLabel(m.round)).map(m => m.id) : [];
+  const koIds = alsoKO ? all.filter(m => isKORoundLabel(m.round)).map(m => m.id) : [];
   const ids = [...groupIds, ...koIds];
 
   if (ids.length === 0) return { cleared: 0, groups: 0, ko: 0 };
