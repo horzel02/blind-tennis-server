@@ -10,7 +10,6 @@ router.get('/', ensureAuth, async (req, res) => {
         const raw = String(req.query.search || '').trim();
         const terms = raw.split(/\s+/).filter(Boolean);
 
-        // potem w prisma:
         const users = await prisma.users.findMany({
             where: {
                 AND: terms.map(term => ({

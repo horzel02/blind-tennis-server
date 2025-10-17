@@ -100,10 +100,6 @@ export async function deleteRegistration(registrationId) {
 }
 
 export const countAcceptedRegistrations = async (tournamentId) => {
-  console.log('DEBUG: W countAcceptedRegistrations');
-  console.log('DEBUG: prisma object:', prisma); // Zobacz, czy prisma jest zainicjowane
-  console.log('DEBUG: prisma.tournamentregistration object:', prisma.tournamentregistration); // Zobacz, czy model istnieje
-
   try {
     const count = await prisma.tournamentregistration.count({
       where: {

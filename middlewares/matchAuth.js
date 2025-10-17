@@ -12,7 +12,6 @@ export async function ensureMatchRefereeOrOrganizer(req, res, next) {
       return res.status(400).json({ error: 'Błędne matchId' });
     }
 
-    // pobieramy mecz (referee + tournament)
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       select: { refereeId: true, tournamentId: true, status: true },
@@ -29,10 +28,6 @@ export async function ensureMatchRefereeOrOrganizer(req, res, next) {
       return res.status(403).json({ error: 'Brak uprawnień do edycji wyniku' });
     }
 
-    // (opcjonalnie) blokuj edycję zakończonych meczów dla sędziego
-    // if (match.status === 'finished' && !isOrganizer) {
-    //   return res.status(409).json({ error: 'Mecz zakończony — wynik zablokowany' });
-    // }
 
     return next();
   } catch (e) {

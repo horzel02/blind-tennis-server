@@ -1,13 +1,13 @@
 // server/controllers/tournamentController.js
 import prisma from '../prismaClient.js';
 import * as tournamentService from '../services/tournamentService.js';
-import * as matchService from '../services/matchService.js'; // ← było brakujące w Twojej wersji
+import * as matchService from '../services/matchService.js';
 
 export async function getAll(req, res) {
   try {
     const tours = await tournamentService.findAllTournaments();
     res.json(tours);
-  } catch (err) {
+  } catch (err) {S
     console.error('💥 [getAll] wyjątek:', err);
     res.status(500).json({ error: err.message });
   }

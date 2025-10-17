@@ -10,7 +10,6 @@ function parseDate(dateStr) {
   return d;
 }
 
-// === helpery coercji ===
 function toInt(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
@@ -25,11 +24,11 @@ function toBool(v, def = undefined) {
   return def;
 }
 
-// format z kompatybilnością wsteczną (isGroupPhase)
+
 function normalizeFormat(format, isGroupPhase) {
   if (format === 'GROUPS_KO' || format === 'KO_ONLY') return format;
   if (typeof isGroupPhase === 'boolean') return isGroupPhase ? 'GROUPS_KO' : 'KO_ONLY';
-  return 'GROUPS_KO'; // domyślnie
+  return 'GROUPS_KO';
 }
 
 function validateSettings({ format, groupSize, qualifiersPerGroup, participant_limit, allowByes }) {
@@ -47,7 +46,6 @@ function validateSettings({ format, groupSize, qualifiersPerGroup, participant_l
       }
     }
   }
-  // KO_ONLY – bez dodatkowych wymagań na tym etapie (sprawdzamy przy generatorze)
 }
 
 function isKORoundLabel(round = '') {
@@ -80,7 +78,6 @@ function normGender(g) {
 }
 
 async function requiredGenderForTournament(tid) {
-  // 👇 najważniejsze: użyj poprawnego delegata (z fallbackiem)
   const Cat = prisma.tournamentCategory || prisma.tournamentcategory;
   const cats = await Cat.findMany({
     where: { tournamentId: Number(tid) },
@@ -92,7 +89,13 @@ async function requiredGenderForTournament(tid) {
 
   const onlySexes = [...set].filter(x => x === 'male' || x === 'female');
   const uniq = new Set(onlySexes);
-  return (uniq.size === 1) ? [...uniq][0] : null; // 'male' | 'female' | null
+  return (uniq.size === 1) ? [...uniq][0] : null;
+}
+
+const ALLOWED_FORMULA = ['open', 'towarzyski', 'mistrzowski'];
+function normalizeFormula(v) {
+  const x = String(v ?? '').toLowerCase().trim();
+  return ALLOWED_FORMULA.includes(x) ? x : 'open';
 }
 
 /* ========================================================================== */
@@ -109,10 +112,11 @@ export function createTournament({
   start_date,
   end_date,
   registration_deadline,
-  participant_limit,   // jedyny limit
+  participant_limit,
   applicationsOpen,
+  formula,
 
-  // nowe/rozbudowane
+
   format,
   groupSize,
   qualifiersPerGroup,
@@ -120,7 +124,7 @@ export function createTournament({
   koSeedingPolicy,
   avoidSameGroupInR1,
 
-  // legacy + scoring
+
   isGroupPhase,
   setsToWin,
   gamesPerSet,
@@ -131,13 +135,12 @@ export function createTournament({
   const fmt = normalizeFormat(format, isGroupPhase);
   const limit = toInt(participant_limit);
 
-  const gs = groupSize != null ? toInt(groupSize) : null;            // KO_ONLY → może być null
+  const gs = groupSize != null ? toInt(groupSize) : null; 
   const qpg = qualifiersPerGroup != null ? toInt(qualifiersPerGroup) : null;
 
   const byes = toBool(allowByes, true);
   const avoid = toBool(avoidSameGroupInR1, true);
 
-  // Walidacja ustawień (dla GROUPS_KO sprawdzamy groupSize/qualifiers itp.)
   validateSettings({
     format: fmt,
     groupSize: gs,
@@ -165,8 +168,8 @@ export function createTournament({
 
       participant_limit: limit,
       applicationsOpen: toBool(applicationsOpen, true),
+      formula: normalizeFormula(formula),
 
-      // nowe ustawienia (bez nulli do kolumn nienullowalnych)
       format: fmt,
       ...(gs !== null && gs !== undefined ? { groupSize: gs } : {}),
       ...(qpg !== null && qpg !== undefined ? { qualifiersPerGroup: qpg } : {}),
@@ -174,9 +177,8 @@ export function createTournament({
       koSeedingPolicy: koSeedingPolicy || 'RANDOM_CROSS',
       avoidSameGroupInR1: avoid,
 
-      // legacy + scoring
       organizer_id,
-      isGroupPhase: fmt === 'GROUPS_KO',                      // zgodność wsteczna
+      isGroupPhase: fmt === 'GROUPS_KO',
       setsToWin: toInt(setsToWin) ?? 2,
       gamesPerSet: toInt(gamesPerSet) ?? 4,
       tieBreakType: tieBreakType || 'super',
@@ -201,10 +203,10 @@ export function updateTournament(
     start_date,
     end_date,
     registration_deadline,
-    participant_limit,   // tylko to
+    participant_limit,
     applicationsOpen,
+    formula,
 
-    // NOWE
     format,
     groupSize,
     qualifiersPerGroup,
@@ -212,7 +214,6 @@ export function updateTournament(
     koSeedingPolicy,
     avoidSameGroupInR1,
 
-    // istniejące
     isGroupPhase,
     setsToWin,
     gamesPerSet,
@@ -233,7 +234,7 @@ export function updateTournament(
   }).then(async current => {
     if (!current) throw new Error('Turniej nie istnieje');
 
-    // >>> NOWE: policz stan meczów
+    // policz stan meczów
     const stats = await getMatchStatsForTournament(id);
 
     // >>> Blokady:
@@ -266,7 +267,6 @@ export function updateTournament(
       }
     }
 
-    // === dalej jak miałeś (obliczenia efektywnych wartości + walidacja)
     const fmt = (format !== undefined)
       ? normalizeFormat(format, isGroupPhase)
       : normalizeFormat(current.format, current.isGroupPhase);
@@ -298,6 +298,7 @@ export function updateTournament(
         : undefined,
       applicationsOpen: applicationsOpen !== undefined ? toBool(applicationsOpen) : undefined,
       participant_limit: participant_limit !== undefined ? limit : undefined,
+      ...(formula !== undefined ? { formula: normalizeFormula(formula) } : {}),
       ...(format !== undefined ? { format: fmt, isGroupPhase: fmt === 'GROUPS_KO' } : {}),
       ...(groupSize !== undefined && gsRaw !== null ? { groupSize: gsRaw } : {}),
       ...(qualifiersPerGroup !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
@@ -433,7 +434,7 @@ export async function updateTournamentSettings(tournamentId, payload) {
   if (payload.format != null) {
     if (!allowedFormat.has(payload.format)) throw new Error('Nieprawidłowy format');
     data.format = payload.format;
-    data.isGroupPhase = payload.format === 'GROUPS_KO'; // zgodność wsteczna
+    data.isGroupPhase = payload.format === 'GROUPS_KO';
   }
   if (payload.groupSize != null) {
     const gs = Number(payload.groupSize);
@@ -555,7 +556,7 @@ export async function registerForTournament(tournamentId, userId) {
   // turniej + kategorie (próba #1: z relacji turnieju)
   const tour = await prisma.tournament.findUnique({
     where: { id: tid },
-    include: { categories: { select: { gender: true } } }, // <-- UŻYJ include
+    include: { categories: { select: { gender: true } } },
   });
   if (!tour) throw new Error('Turniej nie istnieje');
 

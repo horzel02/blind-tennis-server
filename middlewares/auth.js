@@ -2,11 +2,6 @@
 import prisma from '../prismaClient.js';
 
 export function ensureAuth(req, res, next) {
-    /*console.log('DEBUG: W ensureAuth');
-    console.log('DEBUG: req.sessionID:', req.sessionID); // Sprawdzamy, czy ID sesji jest obecne
-    console.log('DEBUG: req.session.passport:', req.session.passport); // Sprawdzamy, czy Passport zapisał użytkownika w sesji
-    console.log('DEBUG: req.isAuthenticated():', req.isAuthenticated()); // Sprawdzamy status uwierzytelnienia
-    console.log('DEBUG: req.user:', req.user); // Sprawdzamy, czy req.user zawiera dane użytkownika*/
     if (req.isAuthenticated()) {
         return next();
     }
@@ -35,3 +30,41 @@ export function hasTournamentRole(requiredRole) {
         next();
     };
 }
+
+// ====== pomocnicze ======
+function pickPrimaryRole(appRoles) {
+  const list = (appRoles || []).map(r => (r || '').toLowerCase());
+  if (list.includes('admin')) return 'admin';
+  if (list.includes('moderator')) return 'moderator';
+  return 'user';
+}
+async function loadPrimaryAppRole(userId) {
+  const rows = await prisma.user_roles.findMany({
+    where: { user_id: Number(userId) },
+    include: { roles: { select: { role_name: true } } },
+  });
+  const names = rows.map(r => r.roles?.role_name?.toLowerCase()).filter(Boolean);
+  return pickPrimaryRole(names);
+}
+
+// ====== KLUCZOWE: wymagana rola globalna ======
+export function requireGlobalRole(minRole) {
+  const order = { user: 0, moderator: 1, admin: 2 };
+  return async (req, res, next) => {
+    try {
+      if (!req.user?.id) return res.status(401).json({ error: 'Brak autoryzacji' });
+      if (!req.user.role) {
+        req.user.role = await loadPrimaryAppRole(req.user.id);
+      }
+      const r = (req.user.role || 'user').toLowerCase();
+      if ((order[r] ?? 0) >= (order[minRole] ?? 0)) return next();
+      return res.status(403).json({ error: 'Brak uprawnień' });
+    } catch (e) {
+      console.error('[requireGlobalRole] error:', e);
+      return res.status(500).json({ error: 'Błąd autoryzacji' });
+    }
+  };
+}
+
+export const requireModerator = requireGlobalRole('moderator');
+export const requireAdmin = requireGlobalRole('admin');

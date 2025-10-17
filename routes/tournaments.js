@@ -9,8 +9,6 @@ import prisma from '../prismaClient.js';
 
 const router = Router();
 
-// Middleware: tylko creator lub zaproszony organizer
-// Ta wersja jest poprawiona i działa poprawnie z :id oraz :tournamentId
 export async function ensureTournyOrg(req, res, next) {
   const tournamentId = parseInt(req.params.id || req.params.tournamentId, 10);
   const userId = req.user.id;
@@ -19,7 +17,6 @@ export async function ensureTournyOrg(req, res, next) {
     return res.status(400).json({ error: 'Nieprawidłowe ID turnieju' });
   }
 
-  // Użycie Prisma Client do znalezienia turnieju
   const tour = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     include: {
@@ -31,14 +28,12 @@ export async function ensureTournyOrg(req, res, next) {
     return res.status(404).json({ error: 'Turniej nie istnieje' });
   }
 
-  // Sprawdzamy czy użytkownik jest twórcą lub ma rolę organizatora
   const isCreator = tour.organizer_id === userId;
   const hasRole = tour.tournamentUserRoles.some(
     role => role.userId === userId && role.role === 'organizer'
   );
 
   if (isCreator || hasRole) {
-    // Możesz przypisać turniej do req, aby nie musieć go ponownie pobierać w kontrolerze
     req.tournament = tour;
     return next();
   }
@@ -70,10 +65,10 @@ router.delete('/:id', ensureAuth, ensureTournyOrg, tournamentController.remove);
 router.post('/:id/invite', ensureAuth, ensureTournyOrg, registrationController.inviteUser);
 router.post('/:id/participants', ensureAuth, ensureTournyOrg, registrationController.inviteUser);
 
-// role per-turniej
+/* role per-turniej
 router.get('/:id/roles', ensureAuth, ensureTournyOrg, rolesController.listRoles);
 router.post('/:id/roles', ensureAuth, ensureTournyOrg, rolesController.addRole);
-router.delete('/:id/roles/:role/:userId', ensureAuth, ensureTournyOrg, rolesController.removeRole);
+router.delete('/:id/roles/:role/:userId', ensureAuth, ensureTournyOrg, rolesController.removeRole);*/
 
 // Mecze
 router.post('/:tournamentId/generate-matches', ensureAuth, ensureTournyOrg, matchController.generateTournamentStructure);
@@ -83,12 +78,12 @@ router.get('/:tournamentId/matches', matchController.getMatchesByTournamentId);
 router.get('/:id/settings', ensureAuth, tournamentController.getTournamentSettings);
 router.put('/:id/settings', ensureAuth, tournamentController.updateTournamentSettings);
 
-// standings/seed/reset (z matchController)
+// standings/seed/reset
 router.get('/:tournamentId/group-standings', matchController.getGroupStandings);
 router.post('/:tournamentId/seed-knockout', ensureAuth, ensureTournyOrg, matchController.seedKnockout);
 router.post('/:tournamentId/reset-knockout', ensureAuth, ensureTournyOrg, matchController.resetKnockoutFromRound);
 
-// KO-only generator (z tournamentController)
+// KO-only generator
 router.post('/:id/generate-ko-only', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutOnly);
 
 router.post('/:tournamentId/reset-groups', ensureAuth, ensureTournyOrg, tournamentController.resetGroupPhase);

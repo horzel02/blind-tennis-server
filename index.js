@@ -21,6 +21,10 @@ import usersRouter from './routes/users.js';
 import matchRoutes from './routes/matchRoutes.js';
 import matchScheduleRoutes from './routes/matchScheduleRoutes.js';
 import userTimetableRoutes from './routes/userTimetableRoutes.js';
+import publicUsersRouter from './routes/publicUsers.js';
+import guardianRoutes from './routes/guardianRoutes.js';
+import notificationsRouter, { registerNotificationSockets } from './routes/notifications.js';
+import adminRoutes from './routes/admin.js';
 
 import prisma from './prismaClient.js';
 
@@ -99,6 +103,7 @@ const io = new Server(httpServer, {
     credentials: true,
   },
 });
+global.__io = io;
 
 // >>> PODPINAMY SESJĘ I PASSPORT DO SOCKET.IO
 io.use((socket, next) => sessionMiddleware(socket.request, {}, next));
@@ -121,6 +126,12 @@ app.use('/api/tournaments/:id/roles', tournamentUserRolesRouter);
 app.use('/api/matches', matchRoutes);
 app.use('/api', matchScheduleRoutes);
 app.use('/api', userTimetableRoutes);
+app.use('/api/public', publicUsersRouter);
+app.use('/api/guardians', guardianRoutes);
+app.use('/api/notifications', notificationsRouter)
+app.use('/api/admin', adminRoutes);
+
+registerNotificationSockets(io);
 
 // === SOCKET HANDLERS ===
 io.on('connection', (socket) => {

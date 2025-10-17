@@ -3,6 +3,8 @@ import prisma from '../prismaClient.js';
 import * as registrationService from '../services/registrationService.js';
 import * as tournamentService from '../services/tournamentService.js';
 import * as tournamentUserRoleService from '../services/tournamentUserRoleService.js';
+import * as notif from '../services/notificationService.js';
+
 
 // POST /api/tournaments/:id/registrations
 export async function createRegistration(req, res) {
@@ -35,8 +37,8 @@ export async function createRegistration(req, res) {
 export async function inviteUser(req, res) {
   try {
     const tournamentId = parseInt(req.params.id, 10);
-    const { userId }   = req.body;
-    const callerId     = req.user.id;
+    const { userId } = req.body;
+    const callerId = req.user.id;
 
     const tour = await tournamentService.findTournamentById(tournamentId);
     if (!tour) return res.status(404).json({ error: 'Turniej nie istnieje' });
@@ -60,18 +62,28 @@ export async function inviteUser(req, res) {
       return res.status(400).json({ error: 'Ten gracz już jest zgłoszony' });
     }
 
-    // KLUCZ: status = 'invited'
+    // KLUCZ: tworzymy zaproszenie (status = invited)
     const reg = await registrationService.createRegistration(
       tournamentId,
       userId,
       'invited',
-      { invitedBy: callerId } // opcjonalnie, jeśli masz kolumnę
+      { invitedBy: callerId }
     );
-    return res.status(201).json(reg);
 
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err.message });
+    // Powiadomienie do zapraszanego gracza
+    await notif.createNotification({
+      userId,
+      type: 'player_invite',
+      title: 'Zaproszenie do turnieju',
+      body: `Organizator zaprosił Cię do turnieju: ${tour.name}`,
+      link: `/tournaments/${tournamentId}/details`,
+      meta: { tournamentId, invitedBy: req.user.id },
+    });
+
+    return res.status(201).json(reg);
+  } catch (e) {
+    console.error('[inviteUser] error:', e);
+    return res.status(400).json({ error: e.message || 'Błąd zaproszenia' });
   }
 }
 
@@ -152,71 +164,93 @@ export async function getAcceptedCount(req, res) {
 export async function updateRegistrationStatus(req, res) {
   try {
     const regId = parseInt(req.params.regId, 10);
-    const { status } = req.body; // 'accepted' | 'rejected' | 'pending'
+    const { status } = req.body;
     const userId = req.user.id;
 
     // 1) Pobierz zgłoszenie + turniej
     const reg = await registrationService.findById(regId);
     if (!reg) return res.status(404).json({ error: 'Zgłoszenie nie istnieje' });
-    const tourn = await tournamentService.findTournamentById(reg.tournamentId);
 
-    // 2) Dowiedz się, czy to twórca turnieju…
+    const tourn = await tournamentService.findTournamentById(reg.tournamentId);
+    if (!tourn) return res.status(404).json({ error: 'Turniej nie istnieje' });
+
+    // 2) Uprawnienia: creator lub zaproszony organizer?
     const isCreator = tourn.organizer_id === userId;
-    // …czy zaproszony organizator
-    const row = await prisma.tournamentuserrole.findFirst({
+    const invitedOrgRow = await prisma.tournamentuserrole.findFirst({
       where: { tournamentId: tourn.id, userId, role: 'organizer' }
     });
-    const isInvitedOrg = Boolean(row);
+    const isInvitedOrg = Boolean(invitedOrgRow);
 
-    // 3) Teraz użyj tych flag w logice uprawnień:
-
-    // a) Cofnięcie zaakceptowanego → tylko org. lub zaproszony org. może do 'pending'
+    // 3) Logika dozwolonych przejść
     if (reg.status === 'accepted') {
+      // cofnięcie zaakceptowanego tylko do 'pending' i tylko org
       if (!(isCreator || isInvitedOrg) || status !== 'pending') {
         return res.status(403).json({ error: 'Tylko organizator może anulować zaakceptowane' });
       }
-    }
-    // b) Cofnięcie odrzuconego → to samo
-    else if (reg.status === 'rejected') {
+    } else if (reg.status === 'rejected') {
+      // cofnięcie odrzuconego tylko do 'pending' i tylko org
       if (!(isCreator || isInvitedOrg) || status !== 'pending') {
         return res.status(403).json({ error: 'Tylko organizator może przywrócić odrzucone' });
       }
-    }
-    // c) Zaproszenie → tylko zaproszony user może przyjąć
-    else if (reg.status === 'invited') {
+    } else if (reg.status === 'invited') {
+      // zaproszenie może zaakceptować TYLKO zaproszony user
       if (!(status === 'accepted' && reg.userId === userId)) {
         return res.status(403).json({ error: 'Do anulowania zaproszenia użyj DELETE' });
       }
-    }
-    // d) Self-registration (pending) → org. lub zaproszony org. może accepted/rejected
-    else if (reg.status === 'pending') {
+    } else if (reg.status === 'pending') {
+      // pending -> accepted/rejected tylko przez org
       if (!((isCreator || isInvitedOrg) && ['accepted', 'rejected'].includes(status))) {
         return res.status(403).json({ error: 'Tylko organizator może zdecydować o zgłoszeniu' });
       }
-    }
-    // e) Inne → nie pozwalamy
-    else {
+    } else {
       return res.status(400).json({ error: 'Nie można zmienić tego statusu' });
     }
 
-    // 4) Wykonaj update
+    // 4) Aktualizacja statusu
     const updated = await registrationService.updateRegistrationStatus(regId, status);
 
-    // 5) Jeżeli status zmienił się na "accepted", dodaj rolę "participant"
+    // 5) Jeśli accepted -> nadaj rolę participant (best-effort)
     if (status === 'accepted') {
       try {
         await tournamentUserRoleService.addRole(tourn.id, reg.userId, 'participant');
-      } catch (e) {
-
-      }
+      } catch { }
     }
-   return res.json(updated);
+
+    // 6) Powiadomienia (zgodnie z listą)
+
+    // 6a) Organizer podjął decyzję o pending → powiadom gracza
+    if (reg.status === 'pending' && (status === 'accepted' || status === 'rejected')) {
+      await notif.createNotification({
+        userId: reg.userId,
+        type: status === 'accepted' ? 'registration_accepted' : 'registration_rejected',
+        title: status === 'accepted' ? 'Zgłoszenie zaakceptowane' : 'Zgłoszenie odrzucone',
+        body: `Twoje zgłoszenie w turnieju: ${tourn.name} zostało ${status === 'accepted' ? 'zaakceptowane' : 'odrzucone'}.`,
+        link: `/tournaments/${tourn.id}/details`,
+        meta: { tournamentId: tourn.id, registrationId: reg.id }
+      });
+    }
+
+    // 6b) Gracz przyjął ZAPROSZENIE (invited -> accepted) → rozwiąż jego zaproszenia w dzwonku
+    if (reg.status === 'invited' && status === 'accepted') {
+      // usuwamy z dzwonka GRACZA wszystkie jego player_invite dla tego turnieju
+      if (notif.resolveByContext) {
+        await notif.resolveByContext(
+          reg.userId,
+          'player_invite',
+          n => n?.meta?.tournamentId === tourn.id
+        );
+      }
+      // (celowo NIE wysyłamy nic do organizatorów — nie ma takiego typu na liście)
+    }
+
+    return res.json(updated);
 
   } catch (err) {
     console.error('💥 [updateRegistrationStatus] wyjątek:', err);
     return res.status(500).json({ error: err.message });
   }
 }
+
 
 // DELETE /api/registrations/:regId
 // Usunięcie zgłoszenia lub anulowanie zaproszenia
@@ -255,11 +289,10 @@ export async function getAllMyRegistrations(req, res) {
     const userId = req.user.id
     // serwis zwróci listę z includem turnieju
     const regs = await registrationService.findAllByUser(userId)
-    // dla bezpieczeństwa możesz tutaj przemapować odpowiedź, np.:
     const out = regs.map(r => ({
       registrationId: r.id,
-      status:         r.status,
-      tournament:     r.tournament   // zawiera cały obiekt turnieju
+      status: r.status,
+      tournament: r.tournament
     }))
     res.json(out)
   } catch (err) {

@@ -101,25 +101,10 @@ export async function clearMatchSchedule(req, res) {
     }
 }
 
-
-/**
- * Auto-rozpiska: greedy „fale” po grupach, potem KO.
- * Body:
- * {
- *   startDay: "2025-11-24",   // początek dnia (w strefie serwera) – WYMAGANE
- *   dayStart: "09:00",        // okno godzinowe
- *   dayEnd:   "20:00",
- *   courts: 3,                // ile kortów
- *   durationMin: 45,          // czas slotu
- *   includeGroups: true,
- *   includeKO: true
- * }
- */
 export async function autoScheduleTournament(req, res) {
     try {
         const tournamentId = Number(req.params.id);
 
-        // uprawnienia organizatora
         const tour = await prisma.tournament.findUnique({
             where: { id: tournamentId },
             select: { id: true, organizer_id: true }
@@ -137,13 +122,13 @@ export async function autoScheduleTournament(req, res) {
             dayStart = '09:00',
             dayEnd = '20:00',
             courts = 2,
-            referees = 99,           // NOWE: limit sędziów (MVP duża liczba)
+            referees = 99,
             durationMin = 45,
             includeGroups = true,
             includeKO = true,
-            onlyKO = false,          // NOWE: planuj tylko KO
-            placeBronzeBeforeFinal = false, // NOWE: BRONZE przed/po finale
-            overwriteExisting = false       // NOWE: nadpisywanie istniejących terminów
+            onlyKO = false,
+            placeBronzeBeforeFinal = false,
+            overwriteExisting = false
         } = req.body || {};
 
         if (!startDay) return res.status(400).json({ error: 'Podaj startDay (YYYY-MM-DD)' });
@@ -173,7 +158,7 @@ export async function autoScheduleTournament(req, res) {
             where: {
                 tournamentId,
                 OR: [
-                    { winnerId: null }, // niezakończone
+                    { winnerId: null },
                     { status: { in: ['scheduled', 'in_progress', 'pending'] } }
                 ]
             },
@@ -182,14 +167,14 @@ export async function autoScheduleTournament(req, res) {
 
         // po findMany:
         if (!overwriteExisting) {
-            matches = matches.filter(m => !m.matchTime); // pomiń już zaplanowane
+            matches = matches.filter(m => !m.matchTime);
         }
 
 
         // wywal zakończone i BYE (jeden zawodnik null)
         matches = matches.filter(m => !m.winnerId && m.player1Id && m.player2Id);
         if (!overwriteExisting) {
-            matches = matches.filter(m => !m.matchTime); // nie ruszaj już wstawionych
+            matches = matches.filter(m => !m.matchTime);
         }
 
         // klasyfikacja meczów
@@ -209,8 +194,8 @@ export async function autoScheduleTournament(req, res) {
             if (r.includes('1/8')) return 3;
             if (r.includes('ćwierćfina')) return 4;
             if (r.includes('półfina')) return 5;
-            if (/3\.?\s*miejsce|mecz o 3/.test(r)) return placeBronzeBeforeFinal ? 6 : 7; // BRONZE
-            if (r.includes('finał')) return placeBronzeBeforeFinal ? 7 : 6;         // FINAL
+            if (/3\.?\s*miejsce|mecz o 3/.test(r)) return placeBronzeBeforeFinal ? 6 : 7;
+            if (r.includes('finał')) return placeBronzeBeforeFinal ? 7 : 6;
             return 99;
         };
 
@@ -219,7 +204,7 @@ export async function autoScheduleTournament(req, res) {
 
         if (!onlyKO && includeGroups) {
             // grupy „falami”
-            const groups = new Map(); // 'A','B',...
+            const groups = new Map();
             for (const m of matches) {
                 if (isGroup(m)) {
                     const g = /grupa\s*([a-z])/i.exec(m.round || '');
@@ -253,7 +238,7 @@ export async function autoScheduleTournament(req, res) {
         }
 
         // sloty
-        const daySlots = []; // [{ time: Date, lanes: Array(cap).fill(null) }]
+        const daySlots = [];
         let dayIdx = 0;
         const pushDay = () => {
             let cur = mkDT(dayIdx, sH, sM);
@@ -269,7 +254,6 @@ export async function autoScheduleTournament(req, res) {
         let slotPtr = 0;
 
         for (const m of queue) {
-            // znajdź slot z wolnym lane
             while (slotPtr < daySlots.length && daySlots[slotPtr].lanes.every(x => x !== null)) {
                 slotPtr++;
             }
@@ -279,7 +263,7 @@ export async function autoScheduleTournament(req, res) {
             }
             const s = daySlots[slotPtr];
             const lane = s.lanes.findIndex(x => x === null);
-            s.lanes[lane] = { matchId: m.id, courtNumber: String(lane + 1) }; // court to string (zgodnie z DB)
+            s.lanes[lane] = { matchId: m.id, courtNumber: String(lane + 1) };
             placed.push({ matchId: m.id, matchTime: s.time, courtNumber: String(lane + 1) });
         }
 
@@ -290,7 +274,7 @@ export async function autoScheduleTournament(req, res) {
                     where: { id: p.matchId },
                     data: {
                         matchTime: p.matchTime,
-                        courtNumber: p.courtNumber,           // String? w Twoim schemacie
+                        courtNumber: p.courtNumber,
                         durationMin: slotMin,
                         updatedAt: new Date()
                     }

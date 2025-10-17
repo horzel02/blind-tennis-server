@@ -6,7 +6,7 @@ import { ensureTournyOrg } from './tournaments.js';
 
 const router = Router();
 
-// Generowanie grup + pusty szkielet KO (jeśli tak masz w serwisie)
+// Generowanie grup + pusty szkielet KO 
 router.post('/:tournamentId/generate-matches', ensureAuth, ensureTournyOrg, matchController.generateTournamentStructure);
 
 // Lista meczów / pojedyńczy mecz
@@ -21,10 +21,10 @@ router.put('/referee/bulk', ensureAuth, matchController.assignRefereeBulk);
 // Tabele grupowe
 router.get('/:tournamentId/group-standings', matchController.getGroupStandings);
 
-// Zasiew KO (pełny/tylko puste/itd.)
+// Zasiew KO )
 router.post('/:tournamentId/seed-knockout', ensureAuth, ensureTournyOrg, matchController.seedKnockout);
 
-// Reset KO od wybranej rundy (np. '1/8', 'Ćwierćfinał', 'SF', 'F')
+// Reset KO od wybranej rundy
 router.post('/:tournamentId/reset-from', ensureAuth, ensureTournyOrg, matchController.resetKnockoutFromRound);
 
 // Ręczne parowanie i blokada

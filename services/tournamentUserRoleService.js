@@ -40,7 +40,7 @@ export async function getRolesForTournament(tournamentId) {
     orderBy: { id: 'asc' },
   });
 
-  // dopasowanie do formatu, którego używa front (roles[].user.*)
+  // dopasowanie do formatu, którego używa front 
   return rows.map(r => ({
     id: r.id,
     tournamentId: r.tournamentId,

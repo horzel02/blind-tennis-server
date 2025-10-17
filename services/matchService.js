@@ -9,7 +9,6 @@ import prisma from '../prismaClient.js';
 const KEY_RANK = { F: 1, SF: 2, QF: 3, R16: 4, R32: 5, R64: 6, R128: 7 };
 function keyToRank(key) { return key ? KEY_RANK[key] ?? null : null; }
 
-// round string -> klucz (F/SF/QF/R16/...)
 function roundToKey(round) {
   if (!round) return null;
   const r = String(round).toLowerCase();
@@ -24,11 +23,11 @@ function roundToKey(round) {
     if (denom === 32) return 'R64';
     if (denom === 64) return 'R128';
   }
-  return null; // np. "Grupa A"
+  return null;
 }
 function roundToRank(round) { return keyToRank(roundToKey(round)); }
 
-// Kanoniczne etykiety KO
+
 function canonicalRoundLabelByKey(key, idx) {
   if (key === 'F') return 'Finał';
   if (key === 'SF') return `Półfinał – Mecz ${idx}`;
@@ -42,7 +41,7 @@ function canonicalRoundLabelByKey(key, idx) {
 
 // query dopasowujące różne zapisy danej rundy
 function queryForKey(key) {
-  if (key === 'F') return { round: { startsWith: 'Finał', mode: 'insensitive' } }; // ważne: NIE contains
+  if (key === 'F') return { round: { startsWith: 'Finał', mode: 'insensitive' } };
   if (key === 'SF') return { round: { contains: 'półfina', mode: 'insensitive' } };
   if (key === 'QF') return { round: { contains: 'ćwierćfina', mode: 'insensitive' } };
   if (key === 'R16') return { round: { contains: '1/8', mode: 'insensitive' } };
@@ -52,11 +51,10 @@ function queryForKey(key) {
   return { round: { startsWith: 'Finał', mode: 'insensitive' } };
 }
 
-// roundOrder (jeśli używasz kolumny roundOrder)
+// roundOrder 
 const ROUND_ORDER_MAP = { R128: 1, R64: 2, R32: 3, R16: 4, QF: 5, SF: 6, F: 7 };
 function roundOrderForKey(key) { return ROUND_ORDER_MAP[key] ?? 99; }
 
-// modele Prisma (na różne nazwy)
 function getRegModel() {
   if (prisma.tournamentRegistration?.findMany) return prisma.tournamentRegistration;
   if (prisma.tournamentregistration?.findMany) return prisma.tournamentregistration;
@@ -68,12 +66,11 @@ function getCategoryModel() {
   throw new Error('Model TournamentCategory nie znaleziony w Prisma Client.');
 }
 
-// KO prefiksy (od najwcześniejszej rundy)
 const KO_ROUNDS = ['1/64', '1/32', '1/16', '1/8', 'Ćwierćfinał', 'Półfinał', 'Finał'];
 const isKnockoutRound = (r = '') => KO_ROUNDS.some(lbl => (r || '').startsWith(lbl));
 const roundRank = (r = '') => KO_ROUNDS.findIndex(lbl => (r || '').startsWith(lbl));
 
-// shuffle
+
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -82,7 +79,7 @@ function shuffleInPlace(arr) {
   return arr;
 }
 
-// indeks „Mecz X” → X
+
 function extractRoundIndex(round) {
   const m = /Mecz\s+(\d+)/i.exec(round || '');
   return m ? parseInt(m[1], 10) : 1;
@@ -94,7 +91,6 @@ function nextKeyOf(key) {
   return null;
 }
 
-// ustawienia turnieju
 async function readTournamentSettings(tId) {
   const t = await prisma.tournament.findUnique({
     where: { id: tId },
@@ -113,10 +109,10 @@ async function readTournamentSettings(tId) {
   };
 }
 
-// potęga 2 >= n
+
 function smallestPow2GE(n) { let p = 1; while (p < n) p <<= 1; return p; }
 
-// key dla rozmiaru
+
 function baseKeyForSize(size) {
   if (size >= 128) return 'R128';
   if (size >= 64) return 'R64';
@@ -216,9 +212,9 @@ function parseGroupLetter(round) {
 
 // domknij mecz jako BYE (walkower) i przepchnij zwycięzcę dalej
 export async function finishByeAndAdvance(tx, match) {
-  // ustal zwycięzcę: gra tylko jedna strona
+
   const winnerId = match.player1Id || match.player2Id;
-  if (!winnerId) return match; // nic do zrobienia
+  if (!winnerId) return match; 
 
   // zamknij mecz
   const closed = await tx.match.update({
@@ -233,7 +229,7 @@ export async function finishByeAndAdvance(tx, match) {
     include: { tournament: true }
   });
 
-  // awans – ta sama logika co po update wyniku
+  // awans – 
   const key = (roundToKey(match.round) || '');
   const nextKey = nextKeyOf(key);
   if (!nextKey) return closed;
@@ -350,7 +346,6 @@ export async function generateKnockoutSkeleton(tournamentId) {
   }
   const baseKey = baseKeyForSize(size);
 
-  // placeholdery wszystkich potrzebnych rund (od bazowej do finału) – BEZ par
   const chain = chainFrom(baseKey);
   for (const key of chain) {
     const cnt = pairsCountForKey(key);
@@ -615,8 +610,6 @@ export async function seedKnockout(tournamentId, opts = {}) {
       4:  [1, 4, 3, 2],
       8:  [1, 8, 5, 4, 3, 6, 7, 2],
       16: [1,16, 9, 8, 5,12,13, 4, 3,14,11, 6, 7,10,15, 2],
-      // dopisz w razie potrzeby:
-      // 32: [...], 64: [...], 128: [...]
     };
     const arr = maps[size];
     if (!arr) throw new Error(`Brak mapy seedów dla size=${size}`);
@@ -650,7 +643,6 @@ export async function seedKnockout(tournamentId, opts = {}) {
         player1Id: p1 ?? null,
         player2Id: p2 ?? null,
         updatedAt: new Date(),
-        // czyścić scheduling/wyniki? jeśli nadpisujesz, warto:
         winnerId: null,
         resultType: 'NORMAL',
         resultNote: null,
@@ -683,7 +675,7 @@ export async function seedKnockout(tournamentId, opts = {}) {
     // --- ROZSTAWIANIE WG SEEDÓW ---
     const slots = Array(bracketSize).fill(null);
     const positions = seedPositionsFor(bracketSize);
-    const shuffled = shuffleInPlace([...entrantsIds]); // KO-only: pełny los
+    const shuffled = shuffleInPlace([...entrantsIds]);
 
     // jeśli BYE dobij do rozmiaru drabinki
     while (shuffled.length < bracketSize) {
@@ -731,7 +723,7 @@ export async function seedKnockout(tournamentId, opts = {}) {
 
       const tx2 = [];
       for (let i = 0; i < pairsIdx.length; i++) {
-        const [a, b] = pairsIdx[i]; // 1-indexed
+        const [a, b] = pairsIdx[i];
         const w1 = from[a - 1]?.winnerId || null;
         const w2 = from[b - 1]?.winnerId || null;
         if (!w1 || !w2) continue;
@@ -814,10 +806,8 @@ export async function seedKnockout(tournamentId, opts = {}) {
 
   let pairs;
 
-  // 2b) jeśli mamy BYE → **seedowanie do slotów**, żeby nie było „pustych” całych meczów
+  // 2b) jeśli mamy BYE  seedowanie do slotów
   if (bracketSize > entrants) {
-    // Zbuduj listę w kolejności „rankingowej”: najpierw zwycięzcy grup, potem drudzy
-    // (dla RANDOM też tak jest OK – najważniejsze, żeby była deterministyczna kolejność do seedów)
     const idsOrdered = [...firsts.filter(Boolean), ...seconds.filter(Boolean)];
     const slots = Array(bracketSize).fill(null);
     const positions = seedPositionsFor(bracketSize);
@@ -829,7 +819,7 @@ export async function seedKnockout(tournamentId, opts = {}) {
       pairs.push([slots[i], slots[i + 1]]);
     }
   } else {
-    // brak BYE → Twoja dotychczasowa logika
+    // brak BYE 
     if (koSeedingPolicy === 'STRUCTURED' && qualifiersPerGroup >= 2) {
       if (baseKey === 'R16' || baseKey === 'QF') {
         const [A1,B1,C1,D1,E1,F1,G1,H1] = firsts;
@@ -857,7 +847,6 @@ export async function seedKnockout(tournamentId, opts = {}) {
   const updates = await prisma.$transaction(tx.filter(Boolean));
   changed.push(...updates);
 
-  // auto-finish BYE + kaskada (jak w KO_ONLY)
   if (allowByes) {
     await prisma.$transaction(async (txi) => {
       const fullBase = await txi.match.findMany({
@@ -949,7 +938,7 @@ export async function resetKnockoutFromRound(tournamentId, fromLabel) {
 
   const toAffect = all.filter(m => {
     const rk = roundToRank(m.round);
-    return rk !== null && rk <= threshold; // F(1)..wybrana(rk)
+    return rk !== null && rk <= threshold;
   });
 
   if (!toAffect.length) return { cleared: 0, from: fromLabel };
@@ -957,7 +946,6 @@ export async function resetKnockoutFromRound(tournamentId, fromLabel) {
   const ids = toAffect.map(m => m.id);
 
   if (format === 'KO_ONLY') {
-    // KO_ONLY -> usuń mecze całkowicie, żeby dało się zmienić format
     const tx = [];
     if (prisma.matchSet?.deleteMany) {
       tx.push(prisma.matchSet.deleteMany({ where: { matchId: { in: ids } } }));
@@ -975,7 +963,6 @@ export async function resetKnockoutFromRound(tournamentId, fromLabel) {
     return { cleared: ids.length, deleted: ids.length, mode: 'KO_ONLY', from: fromLabel };
   }
 
-  // GROUPS_KO -> zostawiamy rekordy (szkielet), tylko czyścimy pary i wynik
   await prisma.$transaction([
     prisma.matchSet.deleteMany({ where: { matchId: { in: ids } } }),
     prisma.match.updateMany({
@@ -1037,7 +1024,7 @@ export async function updateMatchScore(matchId, { status, winnerId, matchSets })
         },
       });
 
-      // --- awans do kolejnej rundy (Twoja logika bez zmian) ---
+      // --- awans do kolejnej rundy ---
       const key = (roundToKey(match.round) || '');
       const nextKey = nextKeyOf(key);
       if (nextKey) {
@@ -1069,7 +1056,6 @@ export async function updateMatchScore(matchId, { status, winnerId, matchSets })
           }
         }
       }
-      // --- [NOWE] Mecz o 3. miejsce po SF ---
       try {
         const keyNow = (roundToKey(match.round) || '');
         if (keyNow === 'SF') {
@@ -1133,7 +1119,7 @@ export async function updateMatchScore(matchId, { status, winnerId, matchSets })
       }
 
 
-      return updated; // <-- BRONZE jest PRZED return
+      return updated;
     });
 
     return result;
@@ -1201,7 +1187,7 @@ export async function getEligiblePlayersForMatch(matchId) {
   const tId = m.tournamentId;
   const r = m.round || '';
 
-  // Grupy → wszyscy zaakceptowani
+  // Grupy  wszyscy zaakceptowani
   if (!isKnockoutRound(r)) {
     const Reg = getRegModel();
     const regs = await Reg.findMany({
@@ -1247,7 +1233,7 @@ export async function getEligiblePlayersForMatch(matchId) {
     if (ordered.length) return ordered;
   }
 
-  // 3) Fallback dla pustej drabinki: zaakceptowani uczestnicy – ALE bez już użytych w tej rundzie
+  // 3) Fallback dla pustej drabinki: zaakceptowani uczestnicy 
   const sameRound = await prisma.match.findMany({
     where: { tournamentId: tId, round: { startsWith: r } },
     select: { player1Id: true, player2Id: true },
@@ -1288,14 +1274,9 @@ export async function setPairing(matchId, { player1Id, player2Id }) {
   });
   if (!match) throw new Error('Mecz nie istnieje');
 
-  // Pozwól na częściowe aktualizacje:
-  // jeśli pole nie przyszło, zostaw dotychczasową wartość (nie NULL!)
   const nextP1 = (player1Id === undefined) ? match.player1Id : player1Id;
   const nextP2 = (player2Id === undefined) ? match.player2Id : player2Id;
 
-  // Walidacja dopuszczenia do rundy – gracz jest OK, jeśli:
-  // - jest w puli eligible LUB
-  // - był już przypisany do TEGO meczu (żeby ponowny zapis bez zmian nie failował)
   const eligible = await getEligiblePlayersForMatch(id);
   const eligibleIds = new Set(eligible.map(u => u.id));
 
@@ -1309,7 +1290,6 @@ export async function setPairing(matchId, { player1Id, player2Id }) {
     throw new Error('Zawodnik nie jest dopuszczony do tej rundy');
   }
 
-  // Unikalność w rundzie – ALE z wyłączeniem bieżącego meczu
   const base = baseRoundName(match.round || '') || '';
   if (nextP1 || nextP2) {
     const conflict = await prisma.match.findFirst({
@@ -1341,8 +1321,6 @@ export async function setPairing(matchId, { player1Id, player2Id }) {
     },
   });
 
-  // (opcjonalnie) wyemituj sockety o aktualizacji
-  // io.to(`tournament-${match.tournamentId}`).emit('match-updated', updated);
 
   return updated;
 }

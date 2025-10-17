@@ -80,7 +80,7 @@ export const updateMatchScore = async (req, res) => {
       io?.to(`tournament-${final.tournamentId}`).emit('match-status-changed', { matchId: final.id, status: final.status });
       io?.to(`tournament-${final.tournamentId}`).emit('matches-invalidate', { reason: 'cascade' });
 
-      // jeśli to nie KO → odśwież tabele grupowe
+      // jeśli to nie KO odśwież tabele grupowe
       const r = (final.round || '').toLowerCase();
       const isKO = /(1\/(8|16|32|64)|ćwierćfina|półfina|finał)/i.test(r);
       if (!isKO) io?.to(`tournament-${final.tournamentId}`).emit('standings-invalidate', { reason: 'group-score-updated' });
@@ -131,7 +131,6 @@ export const updateMatchScore = async (req, res) => {
       }
 
       if (tieBreak === 'no_tie_break') {
-        // min. N i przewaga >= 2 (może być 7:5, 23:21, itd.)
         const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
         const ok = (mx >= gamesToWin) && ((mx - mn) >= 2);
         if (!ok) return res.status(400).json({ error: `Set #${i+1}: bez TB potrzebna przewaga 2 po osiągnięciu ${gamesToWin}.` });
@@ -142,8 +141,8 @@ export const updateMatchScore = async (req, res) => {
       // "normal": N:x lub (N+1):N gdy było N:N
       const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
       const okNormal =
-        (mx === gamesToWin && mn < gamesToWin)   // standardowe domknięcie
-        || (mx === gamesToWin + 1 && mn === gamesToWin); // tie-break 1-punktowy po N:N
+        (mx === gamesToWin && mn < gamesToWin) 
+        || (mx === gamesToWin + 1 && mn === gamesToWin);
       if (!okNormal) {
         return res.status(400).json({ error: `Set #${i+1}: zwykły TB → ${gamesToWin}:x albo ${gamesToWin+1}:${gamesToWin}.` });
       }
@@ -329,7 +328,6 @@ export const assignRefereeBulk = async (req, res) => {
       io?.to(`match-${m.id}`).emit('match-referee-changed', payload);
     }
 
-    // po bulku też warto dać pełny refresh listy
     io?.to(`tournament-${tId}`).emit('matches-invalidate', { reason: 'referee-bulk' });
 
     res.json({ updated: updatedMatches.length, skipped });
@@ -351,7 +349,7 @@ export const getGroupStandings = async (req, res) => {
   }
 };
 
-// SEED KO z grup (top2), wspiera opcje w body: { overwrite, skipLocked, fromRound }
+// SEED KO z grup (top2), wspiera opcje w body:
 export const seedKnockout = async (req, res) => {
   try {
     const io = (req.app.get('socketio') || req.app.get('io'));
@@ -411,7 +409,6 @@ export const setPairing = async (req, res) => {
 
     io?.to(`match-${updated.id}`).emit('match-updated', updated);
     io?.to(`tournament-${updated.tournamentId}`).emit('match-updated', updated);
-    // oraz pełny refresh list
     io?.to(`tournament-${updated.tournamentId}`).emit('matches-invalidate', { reason: 'pairing' });
     res.json(updated);
   } catch (e) {

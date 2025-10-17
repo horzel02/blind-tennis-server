@@ -5,7 +5,6 @@ import prisma from '../prismaClient.js';
 export async function registerUser({ name, surname, email, password, gender, preferredCategory }) {
   const hash = await bcrypt.hash(password, 10);
 
-  // normalizacja i sanity-checki (bardzo lekkie – żadnych twardych blokad)
   const g = String(gender || '').toLowerCase();
   const safeGender = ['male', 'female'].includes(g) ? g : null;
 
@@ -24,9 +23,9 @@ export async function registerUser({ name, surname, email, password, gender, pre
     }
   });
 
-  // 2) pobierz rolę "player"
+  // 2) pobierz rolę "user"
   const role = await prisma.roles.findFirst({
-    where: { role_name: 'player', active: true }
+    where: { role_name: 'user', active: true }
   });
 
   // 3) przypisz rolę
