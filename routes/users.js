@@ -1,3 +1,4 @@
+// server/routes/users.js
 import express from 'express';
 import prisma from '../prismaClient.js';
 import { ensureAuth } from '../middlewares/auth.js';

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { ensureAuth } from '../middlewares/auth.js';
 import { requireModerator, requireAdmin } from '../middlewares/auth.js';
 import prisma from '../prismaClient.js';
+import bcrypt from 'bcrypt';
 
 const router = Router();
 
@@ -181,6 +182,41 @@ router.patch('/tournaments/:id/delete', ensureAuth, requireModerator, async (req
     data: { status: 'deleted', applicationsOpen: false },
   });
   res.json({ id: row.id, status: row.status });
+});
+
+router.patch('/users/:id/password', ensureAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { password } = req.body || {};
+
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'Nieprawidłowe ID użytkownika.' });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Hasło musi mieć co najmniej 6 znaków.' });
+    }
+
+    const user = await prisma.users.findUnique({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ error: 'Użytkownik nie istnieje.' });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+
+    await prisma.users.update({
+      where: { id },
+      data: {
+        password_hash: hash,
+        modification_date: new Date()
+      }
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('Admin set password error:', e);
+    return res.status(500).json({ error: 'Błąd serwera podczas zmiany hasła.' });
+  }
 });
 
 

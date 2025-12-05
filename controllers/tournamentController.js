@@ -201,3 +201,25 @@ export async function resetGroupPhase(req, res) {
     res.status(500).json({ error: e.message || 'Błąd resetu meczów grupowych' });
   }
 }
+
+export async function generateKnockoutSkeleton(req, res) {
+  const { id } = req.params;
+  // Pobieramy instancję socket.io (zależnie jak masz to skonfigurowane w index.js)
+  const io = req.app.get('socketio') || req.app.get('io') || global.__io;
+
+  try {
+    // 1. Wywołanie logiki biznesowej
+    const result = await matchService.generateKnockoutSkeleton(id);
+
+    // 2. Powiadomienie klientów o zmianach (żeby tabela się odświeżyła)
+    if (io) {
+      io.to(`tournament-${Number(id)}`).emit('matches-invalidate', { reason: 'generate-ko-skeleton' });
+    }
+
+    // 3. Zwrócenie sukcesu
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Błąd generowania szkieletu KO:', error);
+    res.status(400).json({ error: error.message || 'Błąd serwera' });
+  }
+}

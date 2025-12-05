@@ -92,10 +92,16 @@ async function requiredGenderForTournament(tid) {
   return (uniq.size === 1) ? [...uniq][0] : null;
 }
 
-const ALLOWED_FORMULA = ['open', 'towarzyski', 'mistrzowski'];
+const ALLOWED_FORMULA = ['towarzyski', 'mistrzowski'];
 function normalizeFormula(v) {
   const x = String(v ?? '').toLowerCase().trim();
-  return ALLOWED_FORMULA.includes(x) ? x : 'open';
+  return ALLOWED_FORMULA.includes(x) ? x : 'towarzyski';
+}
+
+const ALLOWED_TYPES = ['open', 'invite'];
+function normalizeType(v) {
+  const x = String(v ?? '').toLowerCase().trim();
+  return ALLOWED_TYPES.includes(x) ? x : 'open';
 }
 
 /* ========================================================================== */
@@ -116,6 +122,7 @@ export function createTournament({
   applicationsOpen,
   formula,
 
+  type,
 
   format,
   groupSize,
@@ -169,6 +176,7 @@ export function createTournament({
       participant_limit: limit,
       applicationsOpen: toBool(applicationsOpen, true),
       formula: normalizeFormula(formula),
+      type: normalizeType(type),
 
       format: fmt,
       ...(gs !== null && gs !== undefined ? { groupSize: gs } : {}),
@@ -206,6 +214,7 @@ export function updateTournament(
     participant_limit,
     applicationsOpen,
     formula,
+    type,
 
     format,
     groupSize,
@@ -299,6 +308,7 @@ export function updateTournament(
       applicationsOpen: applicationsOpen !== undefined ? toBool(applicationsOpen) : undefined,
       participant_limit: participant_limit !== undefined ? limit : undefined,
       ...(formula !== undefined ? { formula: normalizeFormula(formula) } : {}),
+      ...(type !== undefined ? { type: normalizeType(type) } : {}),
       ...(format !== undefined ? { format: fmt, isGroupPhase: fmt === 'GROUPS_KO' } : {}),
       ...(groupSize !== undefined && gsRaw !== null ? { groupSize: gsRaw } : {}),
       ...(qualifiersPerGroup !== undefined && qpgRaw !== null ? { qualifiersPerGroup: qpgRaw } : {}),
@@ -512,9 +522,13 @@ async function assertRegistrationOpenAndCapacity(tid) {
       applicationsOpen: true,
       registration_deadline: true,
       participant_limit: true,
+      type: true,
     },
   });
   if (!t) throw new Error('Turniej nie istnieje');
+  if (t.type === 'invite') {
+    throw new Error('Zgłoszenia tylko na zaproszenie');
+  }
 
   // zamknięte zgłoszenia
   if (!t.applicationsOpen) {

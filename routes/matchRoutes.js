@@ -1,3 +1,4 @@
+// server/routes/matchRoutes.js
 import { Router } from 'express';
 import * as matchController from '../controllers/matchController.js';
 import { ensureAuth } from '../middlewares/auth.js';

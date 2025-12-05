@@ -1,3 +1,4 @@
+// server/services/inviteService.js
 import prisma from '../prismaClient.js';
 
 export async function addParticipant(tournamentId, userId, organizerId) {

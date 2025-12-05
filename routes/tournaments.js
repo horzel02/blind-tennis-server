@@ -85,6 +85,7 @@ router.post('/:tournamentId/reset-knockout', ensureAuth, ensureTournyOrg, matchC
 
 // KO-only generator
 router.post('/:id/generate-ko-only', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutOnly);
+router.post('/:id/generate-ko-skeleton', ensureAuth, ensureTournyOrg, tournamentController.generateKnockoutSkeleton);
 
 router.post('/:tournamentId/reset-groups', ensureAuth, ensureTournyOrg, tournamentController.resetGroupPhase);
 

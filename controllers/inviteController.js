@@ -1,3 +1,4 @@
+// server/controllers/inviteController.js
 import * as inviteService from '../services/inviteService.js';
 
 export async function addParticipant(req, res) {

@@ -1,13 +1,14 @@
+// server/routes/auth.js
 import { Router } from 'express';
 import passport from 'passport';
-import { register, logout } from '../controllers/authController.js';
+import { register, logout, changePassword, updatePreferences } from '../controllers/authController.js';
 import { ensureAuth } from '../middlewares/auth.js';
 import prisma from '../prismaClient.js';
 
 const router = Router();
 
-async function getAppRoles(prisma, userId) {
-  const rows = await prisma.user_roles.findMany({
+async function getAppRoles(prismaClient, userId) {
+  const rows = await prismaClient.user_roles.findMany({
     where: { user_id: userId },
     include: { roles: { select: { role_name: true } } },
   });
@@ -22,7 +23,6 @@ function pickPrimaryRole(appRoles) {
   if (appRoles.includes('moderator')) return 'moderator';
   return 'user';
 }
-
 
 router.post('/register', register);
 
@@ -88,7 +88,7 @@ router.post('/login', (req, res, next) => {
           active: userFull.active !== false,
           roles: userFull.tournamentUserRoles.map(r => r.role),
           appRoles,
-          role: pickPrimaryRole(appRoles) 
+          role: pickPrimaryRole(appRoles)
         };
 
         console.log('Pomyślnie zalogowano użytkownika:', simplifiedUser.email);
@@ -123,9 +123,10 @@ router.get('/profile', ensureAuth, async (req, res) => {
       email: userFull.email,
       active: userFull.active !== false,
       roles: userFull.tournamentUserRoles.map(r => r.role),
-
       appRoles,
       role: pickPrimaryRole(appRoles),
+      gender: userFull.gender,
+      preferredCategory: userFull.preferredCategory,
     };
 
     res.json(simplifiedUser);
@@ -134,5 +135,8 @@ router.get('/profile', ensureAuth, async (req, res) => {
     res.status(500).json({ message: 'Błąd podczas pobierania profilu użytkownika.' });
   }
 });
+
+router.post('/change-password', ensureAuth, changePassword);
+router.patch('/preferences', ensureAuth, updatePreferences);
 
 export default router;

@@ -1,8 +1,9 @@
+// server/services/publicUserService.js
 import prisma from '../prismaClient.js';
 
 function todayISODate() {
   const d = new Date();
-  d.setHours(0,0,0,0);
+  d.setHours(0, 0, 0, 0);
   return d;
 }
 
@@ -44,21 +45,23 @@ export async function getPublicProfile(userId) {
   });
 
   // 4) nadchodzące: jako zawodnik (zaakceptowane/pending) + start_date >= dziś
-  const upcomingAsPlayer = await prisma.tournamentregistration.findMany({
+  // 4) nadchodzące mecze: jako zawodnik (status 'scheduled' lub 'in_progress')
+  const upcomingAsPlayer = await prisma.match.findMany({
     where: {
-      userId: userId,
-      status: { in: ['accepted', 'pending'] },
-      tournament: { start_date: { gte: todayISODate() } },
+      OR: [{ player1Id: Number(userId) }, { player2Id: Number(userId) }],
+      status: { in: ['scheduled', 'in_progress'] },
+      // Opcjonalnie: tylko mecze z przyszłości
+      // matchTime: { gte: new Date() } 
     },
     select: {
-      tournament: {
-        select: {
-          id: true, name: true, start_date: true, city: true,
-          // jeśli masz slug w schemacie turnieju → dorzuć
-        },
-      },
+      id: true,
+      matchTime: true,
+      round: true,
+      tournament: { select: { id: true, name: true, city: true } },
+      player1: { select: { name: true, surname: true } },
+      player2: { select: { name: true, surname: true } }
     },
-    orderBy: [{ tournament: { start_date: 'asc' } }],
+    orderBy: { matchTime: 'asc' }, // Najbliższe najpierw
     take: 5,
   });
 
@@ -140,9 +143,9 @@ export async function getPublicProfile(userId) {
       score: formatScore(m.matchSets),
     })),
   ]
-  .filter(x => x.date)
-  .sort((a, b) => new Date(b.date) - new Date(a.date))
-  .slice(0, 12);
+    .filter(x => x.date)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 12);
 
   // 7) ile turniejów łącznie (rola dowolna)
   // bierzemy distinct tournamentId z rejestracji, meczów (jako player/ref), oraz ról w turnieju (organizer)
@@ -173,7 +176,7 @@ export async function getPublicProfile(userId) {
   const tournamentsTotal = tSet.size;
 
   // ===== out =====
-  return {
+return {
     user: {
       id: user.id,
       name: user.name,
@@ -190,12 +193,21 @@ export async function getPublicProfile(userId) {
       matchesAsReferee,
     },
     upcoming: {
-      asPlayer: upcomingAsPlayer.map(x => ({
-        id: x.tournament.id,
-        name: x.tournament.name,
-        start_date: x.tournament.start_date,
-        city: x.tournament.city,
-      })),
+      // POPRAWKA TUTAJ:
+      asPlayer: upcomingAsPlayer.map(m => {
+        // Pobieramy dane obu graczy (lub TBD jeśli puste)
+        const p1 = m.player1 ? `${m.player1.name} ${m.player1.surname}` : 'TBD';
+        const p2 = m.player2 ? `${m.player2.name} ${m.player2.surname}` : 'TBD';
+
+        return {
+          id: m.tournament.id,
+          name: m.tournament.name,
+          start_date: m.matchTime || new Date(),
+          // W polu 'city' (które frontend wyświetla jako drugą linię) dajemy pełny opis:
+          city: `${m.round} • ${p1} vs ${p2}` 
+        };
+      }),
+      
       asReferee: upcomingAsReferee.map(m => ({
         id: m.id,
         tournamentId: m.tournament.id,
@@ -211,6 +223,6 @@ export async function getPublicProfile(userId) {
 function formatScore(sets = []) {
   if (!Array.isArray(sets) || sets.length === 0) return null;
   // posortuj po numerze seta
-  const s = [...sets].sort((a,b) => a.setNumber - b.setNumber);
+  const s = [...sets].sort((a, b) => a.setNumber - b.setNumber);
   return s.map(x => `${x.player1Score}:${x.player2Score}`).join(' ');
 }

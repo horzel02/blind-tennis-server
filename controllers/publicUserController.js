@@ -1,3 +1,4 @@
+// server/controllers/publicUserController.js
 import * as publicUserService from '../services/publicUserService.js';
 
 export async function getPublicProfile(req, res) {

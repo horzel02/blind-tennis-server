@@ -48,9 +48,9 @@ export const updateMatchScore = async (req, res) => {
     const incoming = (req.body?.outcome || req.body?.resultType || '').toUpperCase();
     const outcome =
       incoming === 'WO' ? 'WALKOVER' :
-      incoming === 'DQ' ? 'DISQUALIFICATION' :
-      incoming === 'RET' ? 'RETIREMENT' :
-      ['WALKOVER','DISQUALIFICATION','RETIREMENT','NORMAL'].includes(incoming) ? incoming : undefined;
+        incoming === 'DQ' ? 'DISQUALIFICATION' :
+          incoming === 'RET' ? 'RETIREMENT' :
+            ['WALKOVER', 'DISQUALIFICATION', 'RETIREMENT', 'NORMAL'].includes(incoming) ? incoming : undefined;
 
     if (outcome && outcome !== 'NORMAL') {
       const winnerId = Number(req.body?.winnerId);
@@ -94,17 +94,17 @@ export const updateMatchScore = async (req, res) => {
       return res.status(400).json({ error: 'Brak danych setów (sets/matchSets)' });
     }
 
-    const setsToWin   = match.tournament?.setsToWin   ?? 2;
-    const gamesToWin  = match.tournament?.gamesPerSet ?? 6;
-    const tieBreak    = (match.tournament?.tieBreakType || 'normal').toLowerCase();
-    const maxSets     = setsToWin * 2 - 1;
-    const SUPER_TB    = 10;
+    const setsToWin = match.tournament?.setsToWin ?? 2;
+    const gamesToWin = match.tournament?.gamesPerSet ?? 6;
+    const tieBreak = (match.tournament?.tieBreakType || 'normal').toLowerCase();
+    const maxSets = setsToWin * 2 - 1;
+    const SUPER_TB = 10;
 
     const sets = raw.map((s, i) => {
       const p1 = Number(s.p1 ?? s.player1 ?? s.player1Score ?? s.player1Games);
       const p2 = Number(s.p2 ?? s.player2 ?? s.player2Score ?? s.player2Games);
       if (!Number.isInteger(p1) || !Number.isInteger(p2) || p1 < 0 || p2 < 0) {
-        throw new Error(`Nieprawidłowe wartości gemów w secie #${i+1}`);
+        throw new Error(`Nieprawidłowe wartości gemów w secie #${i + 1}`);
       }
       return { p1, p2 };
     });
@@ -115,7 +115,7 @@ export const updateMatchScore = async (req, res) => {
     let p1Sets = 0, p2Sets = 0;
     for (let i = 0; i < sets.length; i++) {
       const { p1, p2 } = sets[i];
-      if (p1 === p2) return res.status(400).json({ error: `Remis w secie #${i+1} jest niedozwolony` });
+      if (p1 === p2) return res.status(400).json({ error: `Remis w secie #${i + 1} jest niedozwolony` });
 
       // czy to decider z super TB?
       const isDecider = (tieBreak === 'super_tie_break')
@@ -124,16 +124,21 @@ export const updateMatchScore = async (req, res) => {
         && (p1Sets === p2Sets);
 
       if (isDecider) {
-        const ok = (p1 === SUPER_TB && p2 < SUPER_TB) || (p2 === SUPER_TB && p1 < SUPER_TB);
-        if (!ok) return res.status(400).json({ error: `Set #${i+1}: super tie-break do ${SUPER_TB} (wygrany ma ${SUPER_TB}, przegrany < ${SUPER_TB}).` });
-        if (p1 === SUPER_TB) p1Sets++; else p2Sets++;
+        // POPRAWKA: Sprawdzamy przewagę 2 punktów
+        const mx = Math.max(p1, p2);
+        const mn = Math.min(p1, p2);
+        // Musi mieć min. 10 pkt ORAZ 2 pkt przewagi
+        const ok = (mx >= SUPER_TB) && ((mx - mn) >= 2);
+
+        if (!ok) return res.status(400).json({ error: `Set #${i + 1}: Super TB wymaga 10 pkt i 2 pkt przewagi.` });
+        if (p1 > p2) p1Sets++; else p2Sets++;
         continue;
       }
 
       if (tieBreak === 'no_tie_break') {
         const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
         const ok = (mx >= gamesToWin) && ((mx - mn) >= 2);
-        if (!ok) return res.status(400).json({ error: `Set #${i+1}: bez TB potrzebna przewaga 2 po osiągnięciu ${gamesToWin}.` });
+        if (!ok) return res.status(400).json({ error: `Set #${i + 1}: bez TB potrzebna przewaga 2 po osiągnięciu ${gamesToWin}.` });
         if (p1 > p2) p1Sets++; else p2Sets++;
         continue;
       }
@@ -141,10 +146,11 @@ export const updateMatchScore = async (req, res) => {
       // "normal": N:x lub (N+1):N gdy było N:N
       const mx = Math.max(p1, p2), mn = Math.min(p1, p2);
       const okNormal =
-        (mx === gamesToWin && mn < gamesToWin) 
-        || (mx === gamesToWin + 1 && mn === gamesToWin);
+        (mx === gamesToWin && (mx - mn) >= 2)        // np. 6:4, 6:3 (musi być przewaga 2)
+        || (mx === gamesToWin + 1 && mn === gamesToWin - 1) // np. 7:5
+        || (mx === gamesToWin + 1 && mn === gamesToWin);    // np. 7:6 (tie-break)
       if (!okNormal) {
-        return res.status(400).json({ error: `Set #${i+1}: zwykły TB → ${gamesToWin}:x albo ${gamesToWin+1}:${gamesToWin}.` });
+        return res.status(400).json({ error: `Set #${i + 1}: zwykły TB → ${gamesToWin}:x albo ${gamesToWin + 1}:${gamesToWin}.` });
       }
       if (p1 > p2) p1Sets++; else p2Sets++;
 

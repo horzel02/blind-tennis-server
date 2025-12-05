@@ -1,3 +1,4 @@
+// server/routes/publicUsers.js
 import { Router } from 'express';
 import * as publicUserController from '../controllers/publicUserController.js';
 

@@ -1,3 +1,4 @@
+// server/routes/guardianRoutes.js
 import { Router } from 'express';
 import { ensureAuth } from '../middlewares/auth.js'; // masz to już
 import * as guardianController from '../controllers/guardianController.js';

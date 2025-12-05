@@ -65,6 +65,7 @@ export async function findByUser(userId) {
   });
 }
 
+// server/services/registrationService.js
 export async function getRegistrationsByTournament(tournamentId) {
   return prisma.tournamentregistration.findMany({
     where: { tournamentId },
@@ -77,14 +78,20 @@ export async function getRegistrationsByTournament(tournamentId) {
           email: true,
           gender: true,
           preferredCategory: true,
-        },
-      },
+          guardiansAsPlayer: {
+            where: { tournamentId, status: 'accepted' },
+            select: {
+              guardian: { select: { id: true, name: true, surname: true, email: true } },
+              status: true
+            }
+          }
+        }
+      }
     },
-    orderBy: {
-      createdAt: 'desc',
-    },
+    orderBy: { createdAt: 'desc' }
   });
 }
+
 
 export async function updateRegistrationStatus(registrationId, newStatus) {
   return prisma.tournamentregistration.update({
